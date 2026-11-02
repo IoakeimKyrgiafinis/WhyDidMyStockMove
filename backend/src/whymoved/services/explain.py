@@ -23,7 +23,7 @@ from whymoved.domain.scoring import DEFAULT_ALPHA, expected_false_alarms, score_
 from whymoved.domain.universe import MARKET_ETF, UniverseMember
 from whymoved.domain.variance import VarianceSplit, variance_split
 
-DEFAULT_CACHE_SIZE = 128
+DEFAULT_CACHE_SIZE = 512  # about eight entries per stock
 SEARCH_LIMIT = 20
 
 
@@ -117,6 +117,14 @@ class MoveExplainer:
         self.alpha = alpha
         self._n_boot = n_boot
         self._cache = _LruCache(cache_size)
+        # Imported here: the timeline needs the explainer for prices and the daily table.
+        from whymoved.services.timeline import Timeline
+
+        self.timeline = Timeline(snapshot, self)
+
+    def cached[T](self, key: Hashable, compute: Callable[[], T]) -> T:
+        """Compute once per key; least recently used entries are dropped first."""
+        return self._cache.get_or_compute(key, compute)
 
     @property
     def members(self) -> list[UniverseMember]:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -140,3 +140,118 @@ class AttributionResponse(BaseModel):
     n_flagged: int
     expected_flags: float
     alpha: float
+
+
+# ---- M4: timeline, insiders, event studies ----
+
+
+class HeadlineOut(BaseModel):
+    headline: str
+    source: str
+    url: str
+    created_at: datetime
+
+
+class FilingOut(BaseModel):
+    accession: str
+    filing_date: date
+    accepted_at: datetime | None
+    items: list[str]
+    labels: list[str]
+    earnings: bool
+    url: str
+    day: date
+
+
+class InsiderFilingOut(BaseModel):
+    accession: str
+    filing_date: date
+    trade_date: date | None
+    day: date | None
+    signal: Literal["buy", "sale", "planned_sale", "routine", "other"]
+    signal_label: str
+    owner_name: str
+    owner_role: str
+    plan: str
+    shares: float | None
+    value: float | None
+    price: float | None
+    n_transactions: int
+    lag_days: int | None
+    url: str
+
+
+class DayItemsOut(BaseModel):
+    headlines: list[HeadlineOut]
+    filings: list[FilingOut]
+    insiders: list[InsiderFilingOut]
+
+
+class DayDetailResponse(DayResponse):
+    items: DayItemsOut
+
+
+class Marker(BaseModel):
+    date: date
+    headlines: int
+    filings: int
+    earnings: bool
+    buys: int
+    sales: int
+
+
+class MarkersResponse(BaseModel):
+    ticker: str
+    markers: list[Marker]
+
+
+class CarTestOut(BaseModel):
+    start: int
+    end: int
+    mean_car: float
+    se: float | None
+    t_stat: float | None
+    p_value: float | None
+    bmp_p: float | None
+    positive_share: float
+    ci_low: float | None
+    ci_high: float | None
+
+
+class PermutationOut(BaseModel):
+    observed: float
+    null_mean: float
+    null_std: float
+    p_value: float
+    n_permutations: int
+
+
+class StockStudyOut(BaseModel):
+    n_requested: int
+    n_used: int
+    dropped_incomplete: int
+    dropped_overlap: int
+    relative_days: list[int]
+    mean_car: list[float]
+    ci_low: list[float | None]
+    ci_high: list[float | None]
+    tests: list[CarTestOut]
+    permutation: PermutationOut | None
+
+
+class ReactionOut(BaseModel):
+    n_events: int
+    mean_abs_z_events: float
+    mean_abs_z_all: float
+    ratio: float
+    p_value: float
+    n_permutations: int
+
+
+class InsidersResponse(BaseModel):
+    ticker: str
+    filings: list[InsiderFilingOut]
+    counts: dict[str, int]
+    study: StockStudyOut | None
+    earnings: ReactionOut | None
+    pooled: dict[str, object] | None

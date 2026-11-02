@@ -18,9 +18,23 @@ export function num(x: number, digits = 2): string {
   return x.toFixed(digits);
 }
 
+/** 1234567 -> "$1.2M" */
+export function money(x: number): string {
+  const abs = Math.abs(x);
+  if (abs >= 1e9) return `$${(x / 1e9).toFixed(1)}B`;
+  if (abs >= 1e6) return `$${(x / 1e6).toFixed(1)}M`;
+  if (abs >= 1e3) return `$${(x / 1e3).toFixed(0)}K`;
+  return `$${x.toFixed(0)}`;
+}
+
 export function pValue(p: number): string {
   if (p < 0.001) return "< 0.001";
   return p.toFixed(3);
+}
+
+/** "p < 0.001" or "p = 0.042", for use in sentences. */
+export function pText(p: number): string {
+  return p < 0.001 ? "p < 0.001" : `p = ${p.toFixed(3)}`;
 }
 
 const DATE_FMT = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" });

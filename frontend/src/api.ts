@@ -101,6 +101,113 @@ export interface Day {
   window: number;
 }
 
+// ---- M4: timeline, insiders, event studies ----
+
+export interface Headline {
+  headline: string;
+  source: string;
+  url: string;
+  created_at: string;
+}
+
+export interface Filing8K {
+  accession: string;
+  filing_date: string;
+  accepted_at: string | null;
+  items: string[];
+  labels: string[];
+  earnings: boolean;
+  url: string;
+  day: string;
+}
+
+export type Signal = "buy" | "sale" | "planned_sale" | "routine" | "other";
+
+export interface InsiderFiling {
+  accession: string;
+  filing_date: string;
+  trade_date: string | null;
+  day: string | null;
+  signal: Signal;
+  signal_label: string;
+  owner_name: string;
+  owner_role: string;
+  plan: string;
+  shares: number | null;
+  value: number | null;
+  price: number | null;
+  n_transactions: number;
+  lag_days: number | null;
+  url: string;
+}
+
+export interface DayDetail extends Day {
+  items: { headlines: Headline[]; filings: Filing8K[]; insiders: InsiderFiling[] };
+}
+
+export interface Marker {
+  date: string;
+  headlines: number;
+  filings: number;
+  earnings: boolean;
+  buys: number;
+  sales: number;
+}
+
+export interface CarTest {
+  start: number;
+  end: number;
+  mean_car: number;
+  se: number | null;
+  t_stat: number | null;
+  p_value: number | null;
+  bmp_p?: number | null;
+  positive_share: number;
+  ci_low: number | null;
+  ci_high: number | null;
+}
+
+export interface StockStudy {
+  n_requested: number;
+  n_used: number;
+  dropped_incomplete: number;
+  dropped_overlap: number;
+  relative_days: number[];
+  mean_car: number[];
+  ci_low: (number | null)[];
+  ci_high: (number | null)[];
+  tests: CarTest[];
+  permutation: { observed: number; null_mean: number; null_std: number; p_value: number; n_permutations: number } | null;
+}
+
+export interface PooledStudy {
+  relative_days: number[];
+  mean_car: number[];
+  ci_low: number[];
+  ci_high: number[];
+  tests: CarTest[];
+  n_events: number;
+  n_stocks: number;
+  n_clusters: number;
+  level: number;
+}
+
+export interface Insiders {
+  ticker: string;
+  filings: InsiderFiling[];
+  counts: Partial<Record<Signal, number>>;
+  study: StockStudy | null;
+  earnings: {
+    n_events: number;
+    mean_abs_z_events: number;
+    mean_abs_z_all: number;
+    ratio: number;
+    p_value: number;
+    n_permutations: number;
+  } | null;
+  pooled: { as_of: string; pre: number; post: number; studies: Partial<Record<Signal, PooledStudy>> } | null;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -143,5 +250,8 @@ export const api = {
   profile: (ticker: string, signal?: AbortSignal) => get<Profile>(`/api/v1/stocks/${enc(ticker)}`, signal),
   daily: (ticker: string, signal?: AbortSignal) => get<Daily>(`/api/v1/stocks/${enc(ticker)}/daily`, signal),
   day: (ticker: string, date: string, signal?: AbortSignal) =>
-    get<Day>(`/api/v1/stocks/${enc(ticker)}/days/${date}`, signal),
+    get<DayDetail>(`/api/v1/stocks/${enc(ticker)}/days/${date}`, signal),
+  markers: (ticker: string, signal?: AbortSignal) =>
+    get<{ ticker: string; markers: Marker[] }>(`/api/v1/stocks/${enc(ticker)}/markers`, signal).then((r) => r.markers),
+  insiders: (ticker: string, signal?: AbortSignal) => get<Insiders>(`/api/v1/stocks/${enc(ticker)}/insiders`, signal),
 };

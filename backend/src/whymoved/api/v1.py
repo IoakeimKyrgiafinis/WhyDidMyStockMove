@@ -1,19 +1,24 @@
 from __future__ import annotations
 
-import math
 from datetime import date
 from typing import Annotated
 
+import pandas as pd
 from fastapi import APIRouter, Depends, Query, Request
 
+from whymoved.api import convert
 from whymoved.api.schemas import (
     AttributionResponse,
     DailyResponse,
-    DayResponse,
+    DayDetailResponse,
+    DayItemsOut,
     ErrorResponse,
     Estimate,
     HealthOut,
+    InsidersResponse,
     Interval,
+    Marker,
+    MarkersResponse,
     MetaResponse,
     ProfileResponse,
     SearchResponse,
@@ -45,12 +50,7 @@ def get_explainer(state: Annotated[DataState, Depends(get_state)]) -> MoveExplai
 Explainer = Annotated[MoveExplainer, Depends(get_explainer)]
 
 
-def _num(value: object) -> float | None:
-    """A finite float, or None for NaN and missing values."""
-    if value is None:
-        return None
-    number = float(value)  # type: ignore[arg-type]
-    return number if math.isfinite(number) else None
+_num = convert.num
 
 
 def _ref(member: UniverseMember) -> StockRef:
@@ -153,11 +153,13 @@ def daily(ticker: str, explainer: Explainer) -> DailyResponse:
     )
 
 
-@router.get("/stocks/{ticker}/days/{day}", response_model=DayResponse)
-def day(ticker: str, day: date, explainer: Explainer) -> DayResponse:
+@router.get("/stocks/{ticker}/days/{day}", response_model=DayDetailResponse)
+def day(ticker: str, day: date, explainer: Explainer) -> DayDetailResponse:
+    """One day explained, with the headlines, 8-Ks and insider filings that landed on it."""
     member = explainer.member(ticker)
     e, row = explainer.day(member.ticker, day)
-    return DayResponse(
+    items = explainer.timeline.day_items(member.ticker, pd.Timestamp(day))
+    return DayDetailResponse(
         ticker=member.ticker,
         date=day,
         total=e.total,
@@ -178,6 +180,82 @@ def day(ticker: str, day: date, explainer: Explainer) -> DayResponse:
         flagged=bool(row["flagged"]),
         alpha=explainer.alpha,
         window=explainer.window,
+        items=DayItemsOut(
+            headlines=convert.headlines(items.headlines),
+            filings=convert.filings(items.filings),
+            insiders=convert.insider_filings(items.insiders),
+        ),
+    )
+
+
+@router.get("/stocks/{ticker}/markers", response_model=MarkersResponse)
+def markers(ticker: str, explainer: Explainer) -> MarkersResponse:
+    """What landed on each trading day: headline counts, 8-K filings and insider filings."""
+    member = explainer.member(ticker)
+    timeline = explainer.timeline
+    h = timeline.headlines(member.ticker)
+    f = timeline.filings(member.ticker)
+    i = timeline.insiders(member.ticker)
+
+    frames = [
+        pd.DataFrame({"day": h["day"], "headlines": 1}),
+        pd.DataFrame({"day": f["day"], "filings": 1, "earnings": f["earnings"].astype(int)}),
+    ]
+    if not i.empty:
+        frames.append(
+            pd.DataFrame(
+                {
+                    "day": i["day"],
+                    "buys": (i["signal"] == "buy").astype(int),
+                    "sales": i["signal"].isin(["sale", "planned_sale"]).astype(int),
+                }
+            )
+        )
+    columns = ["headlines", "filings", "earnings", "buys", "sales"]
+    combined = pd.concat(frames, ignore_index=True).dropna(subset=["day"])
+    combined = combined.reindex(columns=["day", *columns]).fillna({c: 0 for c in columns})
+    totals = combined.groupby("day")[columns].sum().astype(int)
+    # Days with only routine insider filings (awards, tax withholding) get no marker.
+    totals = totals[totals[["headlines", "filings", "buys", "sales"]].sum(axis=1) > 0]
+    rows: dict[pd.Timestamp, dict[str, int]] = totals.to_dict("index")  # type: ignore[assignment]
+
+    return MarkersResponse(
+        ticker=member.ticker,
+        markers=[
+            Marker(
+                date=pd.Timestamp(d).date(),
+                headlines=r["headlines"],
+                filings=r["filings"],
+                earnings=r["earnings"] > 0,
+                buys=r["buys"],
+                sales=r["sales"],
+            )
+            for d, r in sorted(rows.items())
+        ],
+    )
+
+
+@router.get("/stocks/{ticker}/insiders", response_model=InsidersResponse)
+def insiders(ticker: str, explainer: Explainer) -> InsidersResponse:
+    """Form 4 filings sorted by signal, this stock's insider-purchase event study, the earnings
+    reaction size, and the pooled study across all stocks."""
+    member = explainer.member(ticker)
+    timeline = explainer.timeline
+    filings = timeline.insiders(member.ticker)
+    counts = (
+        {str(k): int(v) for k, v in filings["signal"].value_counts().items()}
+        if not filings.empty
+        else {}
+    )
+    study = timeline.insider_study(member.ticker)
+    reaction = timeline.earnings_reaction(member.ticker)
+    return InsidersResponse(
+        ticker=member.ticker,
+        filings=convert.insider_filings(filings),
+        counts=counts,
+        study=convert.stock_study(study) if study.windows.n_requested else None,
+        earnings=convert.reaction(reaction) if reaction else None,
+        pooled=timeline.pooled,
     )
 
 

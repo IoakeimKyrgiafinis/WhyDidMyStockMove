@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api, type Daily, type Profile } from "../api";
 import { fmtDate, titleCase, useAsync } from "../lib";
 import { Attribution } from "./Attribution";
-import { CumulativeChart, DailyChart } from "./Charts";
+import { CumulativeChart, DailyChart, MarkerLegend } from "./Charts";
 import { DayPanel } from "./DayPanel";
 import { HealthCard } from "./HealthCard";
+import { EarningsCard, InsiderPanel } from "./InsiderPanel";
 import { Info } from "./Info";
 import { presetRange, type Range } from "../range";
 import { RangePicker } from "./RangePicker";
@@ -44,6 +45,13 @@ function Loaded({ profile, daily, day, onDay }: { profile: Profile; daily: Daily
 
   const s = profile.stock;
   const lastMove = daily.total[daily.total.length - 1];
+  // Timeline data loads separately so the charts appear without waiting for it.
+  const markers = useAsync(`markers/${s.ticker}`, (signal) => api.markers(s.ticker, signal));
+  const insiders = useAsync(`insiders/${s.ticker}`, (signal) => api.insiders(s.ticker, signal));
+  const markerMap = useMemo(
+    () => (markers.state === "ready" ? new Map(markers.data.map((m) => [m.date, m])) : undefined),
+    [markers],
+  );
 
   return (
     <div className="stock">
@@ -84,8 +92,9 @@ function Loaded({ profile, daily, day, onDay }: { profile: Profile; daily: Daily
               <Info label="daily chart">
                 <p>
                   Each bar is one trading day, split into what the market explains, what the sector explains, and the
-                  stock's own part. Dots below the axis mark days whose own move was unusual for this stock. Click any
-                  day to see it explained in detail.
+                  stock's own part. Dots below the axis mark days whose own move was unusual for this stock; the lane
+                  under them shows earnings filings, insider trades, other 8-Ks and headlines. Click any day to see it
+                  explained in detail, with everything that came out in time for it.
                 </p>
               </Info>
             </header>
@@ -94,9 +103,18 @@ function Loaded({ profile, daily, day, onDay }: { profile: Profile; daily: Daily
               range={range}
               selected={selected >= 0 ? selected : null}
               onSelect={(i) => onDay(daily.dates[i])}
+              markers={markerMap}
             />
+            <MarkerLegend />
             <LatestFlags daily={daily} range={range} onDay={onDay} />
           </section>
+          {insiders.state === "ready" && <EarningsCard data={insiders.data} />}
+          {insiders.state === "ready" && <InsiderPanel data={insiders.data} />}
+          {insiders.state === "error" && (
+            <section className="card">
+              <p className="error">Insider data could not be loaded: {insiders.error.message}</p>
+            </section>
+          )}
         </div>
         <aside className="grid__side">
           {day && selected >= 0 ? (

@@ -13,6 +13,7 @@ dependencies = [
     "httpx",
     "pyarrow",
     "defusedxml",
+    "tzdata",  # New York market hours on systems without a time-zone database
 ]
 
 [project.optional-dependencies]

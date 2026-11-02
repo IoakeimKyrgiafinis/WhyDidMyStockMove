@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { api, type Day } from "../api";
-import { fmtDate, num, pct, pValue, rarity, useAsync } from "../lib";
+import { api, type DayDetail } from "../api";
+import { fmtDate, money, num, pct, pValue, rarity, titleCase, useAsync } from "../lib";
 import { Info } from "./Info";
 
 const Z95 = 1.96;
@@ -31,7 +31,7 @@ export function DayPanel({ ticker, date, onClose }: { ticker: string; date: stri
   );
 }
 
-function DayBody({ day }: { day: Day }) {
+function DayBody({ day }: { day: DayDetail }) {
   const explained = day.market + day.sector + day.drift;
   const parts = [
     { key: "market", label: "Market", value: day.market, se: day.se_market },
@@ -118,10 +118,68 @@ function DayBody({ day }: { day: Day }) {
           </>
         )}
       </div>
+      <DayItems day={day} />
       <p className="muted small">
         Unexplained is not the same as news: fund flows, style effects and plain noise land there too. A coinciding
         headline shows timing, not cause.
       </p>
     </>
+  );
+}
+
+const TIME_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/** Headlines, 8-K filings and insider filings that became public in time for this session. */
+function DayItems({ day }: { day: DayDetail }) {
+  const { headlines, filings, insiders } = day.items;
+  const empty = headlines.length + filings.length + insiders.length === 0;
+  return (
+    <div className="dayitems">
+      <header className="card__head">
+        <h3>What else happened</h3>
+        <Info label="timing">
+          <p>
+            Items are placed on the first session that could react to them. A headline or filing after the 4pm New
+            York close counts toward the next day. Insider filings count from the day after they were filed, since
+            the bulk data has no filing time.
+          </p>
+        </Info>
+      </header>
+      {empty && <p className="muted small">No headlines, company filings or insider trades for this day.</p>}
+      {filings.map((f) => (
+        <a key={f.accession} className="item item--filing" href={f.url} target="_blank" rel="noreferrer">
+          <span className="item__kind">{f.earnings ? "Earnings 8-K" : "8-K"}</span>
+          <span className="item__text">{f.labels.filter((l) => !l.startsWith("Financial statements")).join("; ") || "Company filing"}</span>
+          {f.accepted_at && (
+            <span className="item__meta">
+              filed {fmtDate(f.accepted_at.slice(0, 10))} {f.accepted_at.slice(11, 16)}
+            </span>
+          )}
+        </a>
+      ))}
+      {insiders.map((i) => (
+        <a key={i.accession} className={`item item--${i.signal}`} href={i.url} target="_blank" rel="noreferrer">
+          <span className="item__kind">{i.signal_label}</span>
+          <span className="item__text">
+            {titleCase(i.owner_name)} ({i.owner_role}){i.value !== null ? `, ${money(i.value)}` : ""}
+          </span>
+          <span className="item__meta">filed {fmtDate(i.filing_date)}</span>
+        </a>
+      ))}
+      {headlines.slice(0, 12).map((h) => (
+        <a key={h.url + h.created_at} className="item item--news" href={h.url} target="_blank" rel="noreferrer">
+          <span className="item__kind">{h.source}</span>
+          <span className="item__text">{h.headline}</span>
+          <span className="item__meta">{TIME_FMT.format(new Date(`${h.created_at}Z`))} ET</span>
+        </a>
+      ))}
+      {headlines.length > 12 && <p className="muted small">and {headlines.length - 12} more headlines</p>}
+    </div>
   );
 }
