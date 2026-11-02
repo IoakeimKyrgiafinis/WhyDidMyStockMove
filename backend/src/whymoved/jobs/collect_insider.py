@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+import pandas as pd
 from pydantic import ValidationError
 
 from whymoved.adapters.edgar import from_settings
@@ -87,11 +88,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             quarters = plan_quarters(history_start, today, imported)
             logger.info("importing %d quarters", len(quarters))
 
+            done = set(imported)
+
+            def checkpoint(merged: pd.DataFrame, key: str) -> None:
+                store.save(merged)
+                done.add(key)
+                save_imported(data_dir, done)
+
             merged, report = import_quarters(
-                EdgarInsiderSource(edgar, ticker_by_cik), store.load(), quarters
+                EdgarInsiderSource(edgar, ticker_by_cik), store.load(), quarters, checkpoint
             )
-            store.save(merged)
-            save_imported(data_dir, imported | set(report.imported))
     except (EdgarError, BulkFormatError, StoreError, ValueError) as exc:
         logger.error("insider job failed: %s", exc)
         return 1

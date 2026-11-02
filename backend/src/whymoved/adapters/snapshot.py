@@ -29,8 +29,21 @@ REQUIRED_FILES = (CLOSE_FILE, VOLUME_FILE, UNIVERSE_FILE)
 # Produced by collectors that may fail on a given night; the site works without them.
 OPTIONAL_FILES = (NEWS_FILE, EVENTS_FILE, TRADES_FILE, INSIDER_STUDY_FILE)
 NEWS_COLUMNS = ["headline", "source", "url", "created_at", "symbols"]
+SIGNAL_KINDS = ("open_market_buy", "open_market_sell")
 # Repeated text columns of the trades table, stored as categories to keep memory small.
-_TRADE_CATEGORIES = ("ticker", "form", "code", "kind", "acquired", "direct", "owner_role", "plan")
+_TRADE_CATEGORIES = (
+    "accession",
+    "ticker",
+    "form",
+    "code",
+    "kind",
+    "acquired",
+    "direct",
+    "owner_name",
+    "owner_role",
+    "plan",
+    "source",
+)
 
 
 class SnapshotError(Exception):
@@ -118,7 +131,14 @@ def _read_events(path: Path) -> pd.DataFrame:
 
 
 def _read_trades(path: Path) -> pd.DataFrame:
+    """Open-market purchases and sales only.
+
+    Awards, option exercises and tax withholding are most of the table (about 60% of seven
+    years of Form 4 rows) but carry almost no information, and the studies do not use them.
+    Leaving them out keeps the API inside a small host's memory.
+    """
     trades = normalize_trades(pd.read_parquet(path))
+    trades = trades[trades["kind"].isin(SIGNAL_KINDS)].reset_index(drop=True)
     for name in _TRADE_CATEGORIES:
         trades[name] = trades[name].astype("category")
     return trades

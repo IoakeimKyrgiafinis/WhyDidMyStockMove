@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from whymoved.domain.insider import TRADE_COLUMNS, empty_trades, normalize_trades
 from whymoved.services.insider import import_quarters, merge_trades
@@ -136,3 +137,22 @@ def test_importing_the_same_quarter_twice_does_not_duplicate_rows() -> None:
 
     assert len(first) == len(second) == 2
     assert report.n_total == 2
+
+
+def test_progress_is_reported_after_each_quarter_so_a_failure_keeps_earlier_ones() -> None:
+    class Source:
+        def trades(self, year: int, quarter: int) -> pd.DataFrame | None:
+            if quarter == 3:
+                raise ValueError("Out of bounds nanosecond timestamp")
+            return make_trades([{"accession": f"{year}-{quarter}"}])
+
+    saved: list[tuple[int, str]] = []
+    with pytest.raises(ValueError):
+        import_quarters(
+            Source(),
+            empty_trades(),
+            [(2026, 1), (2026, 2), (2026, 3)],
+            lambda merged, key: saved.append((len(merged), key)),
+        )
+
+    assert saved == [(1, "2026q1"), (2, "2026q2")]

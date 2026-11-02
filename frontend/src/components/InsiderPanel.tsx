@@ -59,7 +59,7 @@ export function InsiderPanel({ data }: { data: Insiders }) {
           <p>
             Open-market purchases are the informative ones: insiders buy for one reason. Sales happen for many
             reasons (taxes, diversification), and sales under a 10b5-1 plan were scheduled months in advance. Awards,
-            option exercises and tax withholding carry almost no information.
+            option exercises and tax withholding carry almost no information, so they are left out here.
           </p>
         </Info>
       </header>

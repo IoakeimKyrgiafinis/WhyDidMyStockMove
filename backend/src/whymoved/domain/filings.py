@@ -41,6 +41,18 @@ def classify_transaction(code: str, is_derivative: bool) -> TransactionKind:
     return TransactionKind.OTHER
 
 
+EARLIEST_DATE = date(1990, 1, 1)
+LATEST_DATE = date(2100, 1, 1)
+
+
+def plausible_date(value: date | None) -> date | None:
+    """The date, or None if it cannot be real. Filings contain typos such as year 0024, which
+    Python accepts but pandas cannot store; one such row must not stop an import."""
+    if value is None or not EARLIEST_DATE <= value < LATEST_DATE:
+        return None
+    return value
+
+
 def mentions_10b5_1(text: str) -> bool:
     """True if a footnote refers to a Rule 10b5-1 trading plan (any hyphen style)."""
     return _PLAN.search(text) is not None

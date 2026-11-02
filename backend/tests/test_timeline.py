@@ -174,5 +174,7 @@ def test_a_broken_optional_file_does_not_stop_loading(tmp_path: Path, market) ->
     snapshot = load_snapshot(tmp_path)
 
     assert snapshot.news.empty
-    assert len(snapshot.trades) == len(market.snapshot.trades)
+    routine = int((market.snapshot.trades["kind"] == "routine").sum())
+    assert routine == 1
+    assert len(snapshot.trades) == len(market.snapshot.trades) - routine  # awards left out
     assert str(snapshot.trades["kind"].dtype) == "category"

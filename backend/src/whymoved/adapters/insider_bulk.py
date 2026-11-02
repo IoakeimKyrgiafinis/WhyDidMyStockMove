@@ -11,7 +11,7 @@ from typing import IO
 
 import pandas as pd
 
-from whymoved.domain.filings import classify_transaction, mentions_10b5_1
+from whymoved.domain.filings import classify_transaction, mentions_10b5_1, plausible_date
 from whymoved.domain.insider import (
     TRADE_COLUMNS,
     empty_trades,
@@ -71,11 +71,11 @@ def parse_date(text: str | None) -> date | None:
         return None
     try:
         if len(parts[0]) == 4:
-            return date(int(parts[0]), int(parts[1]), int(parts[2]))
+            return plausible_date(date(int(parts[0]), int(parts[1]), int(parts[2])))
         month = _MONTHS.get(parts[1].upper())
         if month is None:
             return None
-        return date(int(parts[2]), month, int(parts[0]))
+        return plausible_date(date(int(parts[2]), month, int(parts[0])))
     except ValueError:
         return None
 

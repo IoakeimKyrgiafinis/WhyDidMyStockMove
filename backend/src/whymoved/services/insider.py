@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import pandas as pd
@@ -48,8 +48,13 @@ def import_quarters(
     source: InsiderTradeSource,
     existing: pd.DataFrame,
     quarters: Sequence[tuple[int, int]],
+    on_quarter: Callable[[pd.DataFrame, str], None] | None = None,
 ) -> tuple[pd.DataFrame, ImportReport]:
-    """Download and merge each quarter. Quarters that are not published yet are reported."""
+    """Download and merge each quarter. Quarters that are not published yet are reported.
+
+    `on_quarter(merged, key)` runs after each imported quarter, so a caller can save progress
+    and a later failure does not lose the quarters already done.
+    """
     merged = existing
     imported: list[str] = []
     unavailable: list[str] = []
@@ -63,6 +68,8 @@ def import_quarters(
         merged = merge_trades(merged, fresh)
         imported.append(key)
         logger.info("imported %s: %d rows from this quarter", key, len(fresh))
+        if on_quarter is not None:
+            on_quarter(merged, key)
     return merged, ImportReport(
         imported=tuple(imported), unavailable=tuple(unavailable), n_total=len(merged)
     )

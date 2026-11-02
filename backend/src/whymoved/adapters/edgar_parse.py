@@ -15,6 +15,7 @@ from whymoved.domain.filings import (
     InsiderTransaction,
     ReportingOwner,
     mentions_10b5_1,
+    plausible_date,
 )
 from whymoved.domain.universe import normalize_symbol
 
@@ -45,7 +46,7 @@ def _date(text: str | None) -> date | None:
     if text is None or len(text) < 10:
         return None
     try:
-        return date.fromisoformat(text[:10])
+        return plausible_date(date.fromisoformat(text[:10]))
     except ValueError:
         return None
 

@@ -161,6 +161,8 @@ def trades_by_accession(frame: pd.DataFrame) -> dict[str, pd.DataFrame]:
         ("garbage", None),
         ("31-FEB-2026", None),
         ("28-XXX-2026", None),
+        ("12-FEB-0024", None),  # a real typo in the SEC's 2024q1 file
+        ("2224-02-12", None),
     ],
 )
 def test_parse_date(text: str | None, expected: date | None) -> None:
