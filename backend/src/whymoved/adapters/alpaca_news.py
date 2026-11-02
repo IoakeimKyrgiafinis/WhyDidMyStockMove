@@ -4,7 +4,7 @@ import logging
 import re
 import time
 from collections.abc import Callable, Iterator, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Self
 
 import httpx
@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 NEWS_PATH = "/v1beta1/news"
 MAX_PAGE_LIMIT = 50
 DEFAULT_BATCH_SIZE = 50
-DEFAULT_MAX_PAGES = 500
+DEFAULT_MAX_PAGES = 500  # per batch and window
+DEFAULT_WINDOW = timedelta(days=30)
 
 _SYMBOL = re.compile(r"[A-Z0-9.]{1,10}")
 
@@ -28,6 +29,18 @@ _SYMBOL = re.compile(r"[A-Z0-9.]{1,10}")
 def _chunks(items: Sequence[str], size: int) -> Iterator[list[str]]:
     for start in range(0, len(items), size):
         yield list(items[start : start + size])
+
+
+def _windows(start: datetime, end: datetime, size: timedelta) -> list[tuple[datetime, datetime]]:
+    """[start, end] cut into consecutive windows of at most `size`. Bounds are inclusive in
+    the API, so each window ends one second before the next begins."""
+    out: list[tuple[datetime, datetime]] = []
+    lo = start
+    while lo + size < end:
+        out.append((lo, lo + size - timedelta(seconds=1)))
+        lo += size
+    out.append((lo, end))
+    return out
 
 
 def _format(moment: datetime) -> str:
@@ -98,6 +111,7 @@ class AlpacaNews:
         *,
         batch_size: int = DEFAULT_BATCH_SIZE,
         max_pages: int = DEFAULT_MAX_PAGES,
+        window: timedelta = DEFAULT_WINDOW,
         retry: RetryPolicy | None = None,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.time,
@@ -106,9 +120,12 @@ class AlpacaNews:
             raise ValueError("batch_size must be at least 1")
         if max_pages < 1:
             raise ValueError("max_pages must be at least 1")
+        if window <= timedelta(0):
+            raise ValueError("window must be positive")
         self._http = AlpacaHttp(client, retry=retry, sleep=sleep, clock=clock)
         self._batch_size = batch_size
         self._max_pages = max_pages
+        self._window = window
 
     def close(self) -> None:
         self._http.close()
@@ -126,11 +143,15 @@ class AlpacaNews:
         found: dict[int, NewsItem] = {}
         skipped = 0
         batches = list(_chunks(names, self._batch_size))
+        windows = _windows(start, end, self._window)
         for number, batch in enumerate(batches, start=1):
             logger.info(
                 "fetching news: batch %d of %d (%d symbols)", number, len(batches), len(batch)
             )
-            skipped += self._fetch_batch(batch, start, end, found)
+            # The busiest stocks have thousands of articles a year, so a long range is split
+            # into windows that each stay well under the page cap.
+            for lo, hi in windows:
+                skipped += self._fetch_batch(batch, lo, hi, found)
         if skipped:
             logger.warning("skipped %d malformed articles", skipped)
         return sorted(found.values(), key=lambda item: (item.created_at, item.id))

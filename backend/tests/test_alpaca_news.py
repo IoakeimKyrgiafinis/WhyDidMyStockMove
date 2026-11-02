@@ -362,3 +362,21 @@ def test_invalid_configuration_is_rejected() -> None:
             AlpacaNews(client, batch_size=0)
         with pytest.raises(ValueError, match="max_pages"):
             AlpacaNews(client, max_pages=0)
+
+
+def test_long_ranges_are_fetched_in_windows_that_do_not_overlap() -> None:
+    # 59 days in 30-day windows: two windows, each with its own pagination.
+    harness = make_harness(
+        [ok(page([article(1)], token="t")), ok(page([article(2)])), ok(page([article(3)]))]
+    )
+
+    items = harness.provider.news(["AAA"], datetime(2026, 1, 1), datetime(2026, 3, 1))
+
+    bounds = [(r.url.params["start"], r.url.params["end"]) for r in harness.requests]
+    assert bounds == [
+        ("2026-01-01T00:00:00Z", "2026-01-30T23:59:59Z"),
+        ("2026-01-01T00:00:00Z", "2026-01-30T23:59:59Z"),  # second page of the first window
+        ("2026-01-31T00:00:00Z", "2026-03-01T00:00:00Z"),
+    ]
+    assert "page_token" not in harness.requests[2].url.params  # a new window starts fresh
+    assert [item.id for item in items] == [1, 2, 3]
