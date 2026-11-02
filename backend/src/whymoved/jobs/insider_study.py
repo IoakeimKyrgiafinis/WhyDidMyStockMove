@@ -29,25 +29,41 @@ DEFAULT_DATA_DIR = Path("data")
 SIGNALS = ("buy", "sale", "planned_sale")
 
 
-def collect_windows(explainer: MoveExplainer, signal: str) -> tuple[list[EventWindows], int]:
-    """Event windows for every stock with filings of `signal`; also the number skipped."""
-    out: list[EventWindows] = []
-    skipped = 0
-    for member in explainer.members:
+def collect_windows(
+    explainer: MoveExplainer, signals: Sequence[str] = SIGNALS
+) -> tuple[dict[str, list[EventWindows]], dict[str, int]]:
+    """Event windows per signal for every stock, and how many stocks lacked history.
+
+    One pass over the universe: each stock's daily model and filings are computed once and
+    used for every signal, then dropped, so memory stays flat however large the universe is.
+    """
+    out: dict[str, list[EventWindows]] = {s: [] for s in signals}
+    skipped = dict.fromkeys(signals, 0)
+    for number, member in enumerate(explainer.members, start=1):
+        if number % 250 == 0:
+            logger.info("insider study: %d of %d stocks", number, len(explainer.members))
         insiders = explainer.timeline.insiders(member.ticker)
         if insiders.empty:
             continue
-        days = [pd.Timestamp(d) for d in insiders.loc[insiders["signal"] == signal, "day"].dropna()]
-        if not days:
+        days = {
+            s: [pd.Timestamp(d) for d in insiders.loc[insiders["signal"] == s, "day"].dropna()]
+            for s in signals
+        }
+        if not any(days.values()):
             continue
         try:
             daily = explainer.daily(member.ticker)
         except NotEnoughData:
-            skipped += 1
+            for s in signals:
+                skipped[s] += bool(days[s])
             continue
-        windows = build_event_windows(daily["unexplained"], daily["sigma"], days, PRE, POST)
-        if windows.n_used:
-            out.append(windows)
+        for s in signals:
+            if days[s]:
+                windows = build_event_windows(
+                    daily["unexplained"], daily["sigma"], days[s], PRE, POST
+                )
+                if windows.n_used:
+                    out[s].append(windows)
     return out, skipped
 
 
@@ -83,8 +99,9 @@ def study_to_json(study: PooledStudy) -> dict[str, object]:
 
 def run_study(explainer: MoveExplainer) -> dict[str, object]:
     studies: dict[str, object] = {}
+    all_windows, all_skipped = collect_windows(explainer)
     for signal in SIGNALS:
-        windows, skipped = collect_windows(explainer, signal)
+        windows, skipped = all_windows[signal], all_skipped[signal]
         try:
             study = pool_event_windows(windows, STUDY_TESTS)
         except ValueError as exc:

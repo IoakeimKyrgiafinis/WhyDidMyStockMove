@@ -63,44 +63,65 @@ def summarize_filings(trades: pd.DataFrame) -> pd.DataFrame:
     if trades.empty:
         return pd.DataFrame({name: [] for name in FILING_COLUMNS})
 
-    rows: list[dict[str, object]] = []
-    for accession, group in trades.groupby("accession", sort=False):
-        kinds = {str(k) for k in group["kind"]}
-        plan = str(group["plan"].iloc[0])
-        signal = signal_of(kinds, plan)
-        kind = {
+    # Vectorised with group-bys: the nightly study summarises every stock's filings, and a
+    # Python loop per filing took most of its run time.
+    t = trades.reset_index(drop=True)
+    key = t["accession"].astype(str).rename("accession")
+    kind = t["kind"].astype(str)
+    plan = t["plan"].astype(str)
+    by = kind.groupby(key, sort=False)
+
+    first = pd.DataFrame(
+        {
+            "issuer_cik": t["issuer_cik"].groupby(key, sort=False).first(),
+            "ticker": t["ticker"].astype(str).groupby(key, sort=False).first(),
+            "filing_date": pd.to_datetime(t["filing_date"]).groupby(key, sort=False).first(),
+            "owner_name": t["owner_name"].astype(str).groupby(key, sort=False).first(),
+            "owner_role": t["owner_role"].astype(str).groupby(key, sort=False).first(),
+            "plan": plan.groupby(key, sort=False).first(),
+            "n_transactions": by.size(),
+        }
+    )
+    has = {
+        k.value: (kind == k.value).groupby(key, sort=False).any()
+        for k in (
+            TransactionKind.OPEN_MARKET_BUY,
+            TransactionKind.OPEN_MARKET_SELL,
+            TransactionKind.ROUTINE,
+        )
+    }
+    buy = has[TransactionKind.OPEN_MARKET_BUY.value].to_numpy()
+    sell = has[TransactionKind.OPEN_MARKET_SELL.value].to_numpy()
+    routine = has[TransactionKind.ROUTINE.value].to_numpy()
+    planned = (first["plan"] == "yes").to_numpy()
+    first["signal"] = np.select(
+        [buy, sell & planned, sell, routine], ["buy", "planned_sale", "sale", "routine"], "other"
+    )
+
+    # The rows that count toward shares and value: the filing's signal kind, or all of them
+    # for routine and other filings.
+    counted_kind = first["signal"].map(
+        {
             "buy": TransactionKind.OPEN_MARKET_BUY.value,
             "sale": TransactionKind.OPEN_MARKET_SELL.value,
             "planned_sale": TransactionKind.OPEN_MARKET_SELL.value,
-        }.get(signal)
-        part = group[group["kind"] == kind] if kind else group
-        shares = part["shares"].to_numpy(dtype=np.float64)
-        prices = part["price"].to_numpy(dtype=np.float64)
-        priced = np.isfinite(shares) & np.isfinite(prices)
-        value = float(np.sum(shares[priced] * prices[priced])) if priced.any() else np.nan
-        priced_shares = float(np.sum(shares[priced]))
-        trade_dates = pd.to_datetime(part["trade_date"]).dropna()
-        last_trade = trade_dates.max() if not trade_dates.empty else pd.NaT
-        filed = pd.Timestamp(group["filing_date"].iloc[0])
-        rows.append(
-            {
-                "accession": str(accession),
-                "issuer_cik": int(group["issuer_cik"].iloc[0]),
-                "ticker": str(group["ticker"].iloc[0]),
-                "filing_date": filed,
-                "trade_date": last_trade,
-                "signal": signal,
-                "owner_name": str(group["owner_name"].iloc[0]),
-                "owner_role": str(group["owner_role"].iloc[0]),
-                "plan": plan,
-                "shares": float(np.nansum(shares)) if len(shares) else np.nan,
-                "value": value,
-                "price": value / priced_shares if priced_shares > 0 else np.nan,
-                "n_transactions": len(group),
-                "lag_days": (filed - last_trade).days if not pd.isna(last_trade) else np.nan,
-            }
-        )
-    out = pd.DataFrame(rows, columns=FILING_COLUMNS)
+        }
+    )
+    row_kind = key.map(counted_kind)
+    counted = row_kind.isna() | (kind == row_kind)
+    shares = t["shares"].astype("float64").where(counted)
+    price = t["price"].astype("float64").where(counted)
+    priced = shares.notna() & price.notna()
+    value = (shares * price).where(priced).groupby(key, sort=False).sum(min_count=1)
+    priced_shares = shares.where(priced).groupby(key, sort=False).sum()
+    last_trade = pd.to_datetime(t["trade_date"]).where(counted).groupby(key, sort=False).max()
+
+    first["shares"] = shares.groupby(key, sort=False).sum()
+    first["value"] = value
+    first["price"] = (value / priced_shares).where(priced_shares > 0)
+    first["trade_date"] = last_trade
+    first["lag_days"] = (first["filing_date"] - last_trade).dt.days
+    out = first.reset_index()[FILING_COLUMNS]
     return out.sort_values(["filing_date", "accession"], ascending=[False, True]).reset_index(
         drop=True
     )
