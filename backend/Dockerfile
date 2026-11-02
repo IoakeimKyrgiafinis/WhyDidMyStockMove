@@ -17,7 +17,8 @@ RUN mkdir -p src/whymoved \
 COPY src ./src
 RUN pip install --no-deps --force-reinstall -c requirements.lock .
 
-RUN useradd --create-home --uid 1000 app
+# The API downloads the nightly snapshot into /app/data, so that folder must be writable.
+RUN useradd --create-home --uid 1000 app && mkdir -p /app/data && chown app /app/data
 USER app
 
 EXPOSE 8000

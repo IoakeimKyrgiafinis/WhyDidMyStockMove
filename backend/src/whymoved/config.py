@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import SecretStr, field_validator
@@ -12,6 +13,12 @@ class Settings(BaseSettings):
 
     # Comma-separated list of allowed browser origins (not a secret).
     cors_origins: str = "http://localhost:5173"
+
+    # Where the nightly snapshot lives. With a snapshot URL (the GitHub release download
+    # prefix), the API downloads the files there at startup and refreshes them periodically.
+    data_dir: Path = Path("data")
+    snapshot_url: str = ""
+    snapshot_refresh_hours: float = 6.0
 
     @property
     def cors_origin_list(self) -> list[str]:
