@@ -1,0 +1,79 @@
+name: Nightly data
+
+on:
+  schedule:
+    - cron: "0 4 * * 2-6"   # 04:00 UTC Tuesday to Saturday: after Monday to Friday sessions close
+  workflow_dispatch:
+    inputs:
+      force_full:
+        description: "Refetch all price history"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      WHYMOVED_ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
+      WHYMOVED_ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      WHYMOVED_SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+
+      - name: Install
+        run: pip install -c requirements.lock .
+
+      - name: Restore the previous snapshot
+        run: |
+          mkdir -p data
+          gh release download data-latest --dir data --clobber || echo "No previous snapshot yet"
+
+      - name: Prices and universe
+        id: prices
+        run: python -m whymoved.jobs.nightly ${{ inputs.force_full && '--force-full' || '' }}
+
+      - name: Headlines
+        id: news
+        continue-on-error: true
+        run: python -m whymoved.jobs.collect_news
+
+      - name: Insider data sets
+        id: insider
+        continue-on-error: true
+        run: python -m whymoved.jobs.collect_insider
+
+      - name: Recent filings
+        id: filings
+        continue-on-error: true
+        run: python -m whymoved.jobs.collect_filings
+
+      - name: Publish the snapshot
+        run: |
+          gh release view data-latest > /dev/null 2>&1 || \
+            gh release create data-latest --title "Data snapshot" \
+              --notes "Nightly data snapshot, replaced on every run."
+          gh release upload data-latest data/* --clobber
+
+      - name: Fail the run if a collector failed
+        if: steps.news.outcome == 'failure' || steps.insider.outcome == 'failure' || steps.filings.outcome == 'failure'
+        run: |
+          echo "A collector failed. The snapshot was still published with the data that succeeded."
+          exit 1
