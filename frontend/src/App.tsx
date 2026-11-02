@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Search } from "./components/Search";
 import { StockView } from "./components/StockView";
 import { fmtDate, readRoute, useAsync, writeRoute, type Route } from "./lib";
@@ -42,6 +43,7 @@ export default function App() {
       </header>
 
       <main>
+        <ErrorBoundary key={route.ticker ?? ""}>
         {route.ticker ? (
           <StockView
             ticker={route.ticker}
@@ -52,6 +54,7 @@ export default function App() {
         ) : (
           <Landing onSelect={(t) => go({ ticker: t, day: null })} />
         )}
+        </ErrorBoundary>
       </main>
 
       <Footer />
@@ -85,7 +88,9 @@ function Landing({ onSelect }: { onSelect: (ticker: string) => void }) {
             ? meta.data.message ?? "The data is loading."
             : meta.state === "error"
               ? meta.error.message
-              : "Connecting..."}
+              : meta.waking
+                ? "The server is waking up after a quiet spell. This can take up to a minute..."
+                : "Connecting..."}
       </p>
 
       <div className="how">

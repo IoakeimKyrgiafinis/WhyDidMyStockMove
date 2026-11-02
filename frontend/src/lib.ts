@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ApiError } from "./api";
 
 // ---- formatting ----
 
@@ -65,11 +66,19 @@ export function titleCase(name: string): string {
 // ---- data loading ----
 
 export type Async<T> =
-  | { state: "loading" }
+  | { state: "loading"; waking?: boolean }
   | { state: "error"; error: Error }
   | { state: "ready"; data: T };
 
-/** Runs `load` whenever `key` changes and aborts the previous request. */
+const RETRY_DELAYS_MS = [3000, 5000, 8000, 10000, 15000, 20000];
+
+/** True for errors that go away on their own: a sleeping free-tier server, or data still loading. */
+function transient(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 0 || error.status === 503 || error.status === 502);
+}
+
+/** Runs `load` whenever `key` changes and aborts the previous request. Transient failures are
+ * retried for about a minute, with `waking` set so the page can say what is happening. */
 export function useAsync<T>(key: string | null, load: (signal: AbortSignal) => Promise<T>): Async<T> {
   const [result, setResult] = useState<{ key: string | null; value: Async<T> }>({
     key: null,
@@ -79,14 +88,26 @@ export function useAsync<T>(key: string | null, load: (signal: AbortSignal) => P
   useEffect(() => {
     if (key === null) return;
     const controller = new AbortController();
-    load(controller.signal).then(
-      (data) => setResult({ key, value: { state: "ready", data } }),
-      (error: unknown) => {
-        if (controller.signal.aborted) return;
-        setResult({ key, value: { state: "error", error: error instanceof Error ? error : new Error(String(error)) } });
-      },
-    );
-    return () => controller.abort();
+    let timer: number | undefined;
+    const attempt = (n: number) => {
+      load(controller.signal).then(
+        (data) => setResult({ key, value: { state: "ready", data } }),
+        (error: unknown) => {
+          if (controller.signal.aborted) return;
+          if (transient(error) && n < RETRY_DELAYS_MS.length) {
+            setResult({ key, value: { state: "loading", waking: true } });
+            timer = window.setTimeout(() => attempt(n + 1), RETRY_DELAYS_MS[n]);
+            return;
+          }
+          setResult({ key, value: { state: "error", error: error instanceof Error ? error : new Error(String(error)) } });
+        },
+      );
+    };
+    attempt(0);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
     // `load` is expected to depend only on `key`
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);

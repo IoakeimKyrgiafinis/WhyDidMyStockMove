@@ -7,6 +7,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends, Query, Request
 
 from whymoved.api import convert
+from whymoved.api.ratelimit import TokenBucket, client_key
 from whymoved.api.schemas import (
     AttributionResponse,
     DailyResponse,
@@ -299,6 +300,9 @@ def reactions(ticker: str, day: date, request: Request, explainer: Explainer) ->
     """
     member = explainer.member(ticker)
     service: ReactionService = request.app.state.reactions
+    if service.available:
+        limiter: TokenBucket = request.app.state.reaction_limiter
+        limiter.take(client_key(request))
     if not service.available:
         return ReactionsResponse(
             ticker=member.ticker,

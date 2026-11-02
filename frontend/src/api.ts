@@ -353,7 +353,11 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
     let message = `Request failed (HTTP ${response.status})`;
     try {
       const body = (await response.json()) as { error?: { code: string; message: string } };
-      if (body.error) ({ code, message } = body.error);
+      if (body.error) {
+        code = body.error.code;
+        // API messages are lower-case fragments; show them as sentences.
+        message = body.error.message.charAt(0).toUpperCase() + body.error.message.slice(1);
+      }
     } catch {
       // not JSON; keep the generic message
     }

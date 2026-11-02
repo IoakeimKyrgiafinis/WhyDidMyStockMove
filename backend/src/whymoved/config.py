@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     alpaca_key_id: SecretStr | None = None
     alpaca_secret_key: SecretStr | None = None
     alpaca_feed: Literal["iex", "sip"] = "iex"
+    # Intraday reactions spend the Alpaca quota: allow a burst, then a steady rate per visitor.
+    reaction_burst: int = 10
+    reaction_requests_per_minute: float = 20.0
+
+    log_level: str = "INFO"
 
     @property
     def cors_origin_list(self) -> list[str]:

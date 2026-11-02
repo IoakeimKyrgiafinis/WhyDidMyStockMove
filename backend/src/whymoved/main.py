@@ -5,11 +5,14 @@ from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from whymoved.adapters.alpaca_intraday import build_intraday
 from whymoved.api.errors import install_error_handlers
 from whymoved.api.health import router as health_router
+from whymoved.api.observability import RequestContextMiddleware, configure_logging
 from whymoved.api.peers import router as peers_router
+from whymoved.api.ratelimit import TokenBucket
 from whymoved.api.state import DataState
 from whymoved.api.v1 import router as v1_router
 from whymoved.config import Settings, get_settings
@@ -61,12 +64,19 @@ def create_app(
     app = FastAPI(title="Why Did My Stock Move?", version="0.2.0", lifespan=lifespan)
     app.state.data = state
     app.state.reactions = reactions or _reactions(settings)
+    app.state.reaction_limiter = TokenBucket(
+        settings.reaction_burst, settings.reaction_requests_per_minute
+    )
+    # Middleware added last runs first: request IDs and logging wrap everything.
+    app.add_middleware(GZipMiddleware, minimum_size=1024)  # skips event streams
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
         allow_methods=["GET"],
         allow_headers=["*"],
+        expose_headers=["X-Request-ID"],
     )
+    app.add_middleware(RequestContextMiddleware)
     install_error_handlers(app)
     app.include_router(health_router)
     app.include_router(v1_router)
@@ -74,4 +84,10 @@ def create_app(
     return app
 
 
-app = create_app()
+def build() -> FastAPI:
+    """The production app: JSON logs to stdout, then the API."""
+    configure_logging(get_settings().log_level)
+    return create_app()
+
+
+app = build()

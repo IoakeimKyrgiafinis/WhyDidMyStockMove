@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { api, type Daily, type Profile } from "../api";
+import { api, ApiError, type Daily, type Profile } from "../api";
 import { fmtDate, titleCase, useAsync } from "../lib";
 import { Attribution } from "./Attribution";
 import { CumulativeChart, DailyChart, MarkerLegend } from "./Charts";
@@ -23,12 +23,34 @@ export function StockView({ ticker, day, onDay, onTicker }: Props) {
     Promise.all([api.profile(ticker, signal), api.daily(ticker, signal)]),
   );
 
-  if (data.state === "loading") return <p className="status">Loading {ticker}...</p>;
+  if (data.state === "loading") {
+    return (
+      <div className="status">
+        <div className="spinner" aria-hidden="true" />
+        <p>
+          {data.waking
+            ? "The server is waking up after a quiet spell. This can take up to a minute..."
+            : `Loading ${ticker}...`}
+        </p>
+      </div>
+    );
+  }
   if (data.state === "error") {
+    const unknown = data.error instanceof ApiError && data.error.code === "unknown_ticker";
     return (
       <div className="status status--error">
         <h2>{ticker}</h2>
         <p>{data.error.message}</p>
+        {unknown && (
+          <p className="muted">
+            The site covers US stocks in the Russell 3000 with complete price data. Try another ticker in the
+            search above, for example{" "}
+            <button type="button" className="link" onClick={() => onTicker("AAPL")}>
+              AAPL
+            </button>
+            .
+          </p>
+        )}
       </div>
     );
   }

@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
+from whymoved.api.ratelimit import RateLimited
 from whymoved.api.state import DataUnavailable
 from whymoved.services.explain import NotEnoughData, UnknownTicker
 
@@ -28,6 +29,13 @@ async def _not_enough_data(_: Request, exc: Exception) -> JSONResponse:
 
 async def _unavailable(_: Request, exc: Exception) -> JSONResponse:
     return error_response(503, "data_unavailable", str(exc))
+
+
+async def _rate_limited(_: Request, exc: Exception) -> JSONResponse:
+    assert isinstance(exc, RateLimited)
+    response = error_response(429, "rate_limited", str(exc))
+    response.headers["Retry-After"] = str(max(1, round(exc.retry_after)))
+    return response
 
 
 async def _invalid(_: Request, exc: Exception) -> JSONResponse:
@@ -55,6 +63,7 @@ def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(UnknownTicker, _unknown_ticker)
     app.add_exception_handler(NotEnoughData, _not_enough_data)
     app.add_exception_handler(DataUnavailable, _unavailable)
+    app.add_exception_handler(RateLimited, _rate_limited)
     app.add_exception_handler(RequestValidationError, _invalid)
     app.add_exception_handler(ValueError, _invalid)
     app.add_exception_handler(HTTPException, _http)
