@@ -1,9 +1,12 @@
 FROM python:3.12-slim
 
+# ARROW_DEFAULT_MEMORY_POOL=system: Arrow's default allocator keeps freed memory, which on a
+# 512 MB host costs about 150 MB after loading the snapshot.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    ARROW_DEFAULT_MEMORY_POOL=system
 
 WORKDIR /app
 

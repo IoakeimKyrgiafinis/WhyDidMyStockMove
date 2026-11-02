@@ -28,6 +28,9 @@ jobs:
       WHYMOVED_ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
       WHYMOVED_ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
       WHYMOVED_SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      # Consolidated (SIP) daily history: the free plan serves it for past days, and the IEX
+      # feed has no data before mid-2020 and gaps in thinly traded stocks.
+      WHYMOVED_ALPACA_FEED: sip
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4

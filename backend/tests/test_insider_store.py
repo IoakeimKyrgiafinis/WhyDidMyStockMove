@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from whymoved.adapters.insider_store import (
+    SIGNALS_FILE,
     STATE_FILE,
     TRADES_FILE,
     ParquetTradeStore,
@@ -111,7 +112,7 @@ def test_a_failed_write_keeps_the_previous_data(
         store.save(sample().iloc[:1])
 
     pd.testing.assert_frame_equal(store.load(), sample())
-    assert [p.name for p in tmp_path.iterdir()] == [TRADES_FILE]
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted([SIGNALS_FILE, TRADES_FILE])
 
 
 def test_imported_quarters_round_trip(tmp_path: Path) -> None:
@@ -132,3 +133,15 @@ def test_bad_state_files_are_reported(tmp_path: Path) -> None:
     (tmp_path / STATE_FILE).write_text('{"imported": [1, 2]}', encoding="utf-8")
     with pytest.raises(StoreError, match="expected format"):
         load_imported(tmp_path)
+
+
+def test_the_signals_extract_holds_only_open_market_trades(tmp_path: Path) -> None:
+    trades = sample()
+    ParquetTradeStore(tmp_path).save(trades)
+
+    extract = pd.read_parquet(tmp_path / SIGNALS_FILE)
+
+    expected = trades[trades["kind"].isin(["open_market_buy", "open_market_sell"])]
+    assert len(extract) == len(expected) > 0
+    assert set(extract["kind"]) <= {"open_market_buy", "open_market_sell"}
+    assert len(expected) < len(trades)  # the sample has routine rows to leave out

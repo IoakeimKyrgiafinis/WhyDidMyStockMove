@@ -11,25 +11,27 @@ from pathlib import Path
 
 import httpx
 import pandas as pd
+import pyarrow as pa
+import pyarrow.compute as pc
+import pyarrow.parquet as pq
 
 from whymoved.adapters.filings_store import EVENTS_FILE
 from whymoved.adapters.http_policy import RetryPolicy
-from whymoved.adapters.insider_store import TRADES_FILE
+from whymoved.adapters.insider_store import SIGNAL_KINDS, SIGNALS_FILE, TRADES_FILE
 from whymoved.adapters.news_store import NEWS_FILE
-from whymoved.adapters.parquet_store import CLOSE_FILE, VOLUME_FILE, ParquetPriceStore
+from whymoved.adapters.parquet_store import CLOSE_FILE
 from whymoved.domain.corporate_events import empty_events, normalize_events
-from whymoved.domain.insider import empty_trades, normalize_trades
+from whymoved.domain.insider import TRADE_COLUMNS, empty_trades
 from whymoved.domain.universe import UniverseMember
 
 logger = logging.getLogger(__name__)
 
 UNIVERSE_FILE = "universe.json"
 INSIDER_STUDY_FILE = "insider_study.json"
-REQUIRED_FILES = (CLOSE_FILE, VOLUME_FILE, UNIVERSE_FILE)
+REQUIRED_FILES = (CLOSE_FILE, UNIVERSE_FILE)  # the API never reads volumes
 # Produced by collectors that may fail on a given night; the site works without them.
-OPTIONAL_FILES = (NEWS_FILE, EVENTS_FILE, TRADES_FILE, INSIDER_STUDY_FILE)
+OPTIONAL_FILES = (NEWS_FILE, EVENTS_FILE, SIGNALS_FILE, INSIDER_STUDY_FILE)
 NEWS_COLUMNS = ["headline", "source", "url", "created_at", "symbols"]
-SIGNAL_KINDS = ("open_market_buy", "open_market_sell")
 # Repeated text columns of the trades table, stored as categories to keep memory small.
 _TRADE_CATEGORIES = (
     "accession",
@@ -70,12 +72,14 @@ class Snapshot:
 
 def load_snapshot(directory: Path) -> Snapshot:
     """Read the nightly job's outputs from `directory`."""
-    try:
-        bars = ParquetPriceStore(directory).load()
-    except Exception as exc:  # StoreError, or pyarrow failing on a truncated file
-        raise SnapshotError(f"cannot read prices: {exc}") from exc
-    if bars is None:
+    # Only closes: the API never uses volumes, and reading them costs memory on a small host.
+    close_path = directory / CLOSE_FILE
+    if not close_path.exists():
         raise SnapshotError(f"no price files in {directory}")
+    try:
+        raw_close = pd.read_parquet(close_path)
+    except Exception as exc:  # pyarrow failing on a truncated or corrupt file
+        raise SnapshotError(f"cannot read prices: {exc}") from exc
 
     path = directory / UNIVERSE_FILE
     try:
@@ -95,7 +99,7 @@ def load_snapshot(directory: Path) -> Snapshot:
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise SnapshotError(f"cannot read {path}: {exc}") from exc
 
-    close = bars.close.sort_index()
+    close = raw_close.sort_index()
     close.index = pd.DatetimeIndex(close.index).normalize()
     return Snapshot(
         close=close,
@@ -104,7 +108,7 @@ def load_snapshot(directory: Path) -> Snapshot:
         history_start=history_start,
         news=_optional(directory / NEWS_FILE, _read_news, pd.DataFrame(columns=NEWS_COLUMNS)),
         events=_optional(directory / EVENTS_FILE, _read_events, empty_events()),
-        trades=_optional(directory / TRADES_FILE, _read_trades, empty_trades()),
+        trades=_optional(_trades_path(directory), _read_trades, empty_trades()),
         insider_study=_optional(directory / INSIDER_STUDY_FILE, _read_json, None),
     )
 
@@ -121,13 +125,22 @@ def _optional[T](path: Path, read: Callable[[Path], T], default: T) -> T:
 
 
 def _read_news(path: Path) -> pd.DataFrame:
-    frame = pd.read_parquet(path, columns=NEWS_COLUMNS)
-    frame["created_at"] = pd.to_datetime(frame["created_at"])
+    """Headlines kept in Arrow's compact string format: two years of news for the whole
+    universe is hundreds of thousands of rows, too many to hold as Python strings."""
+    frame = pd.read_parquet(path, columns=NEWS_COLUMNS, dtype_backend="pyarrow")
+    frame["created_at"] = pd.to_datetime(frame["created_at"].astype("datetime64[ns]"))
     return frame.sort_values("created_at", kind="mergesort").reset_index(drop=True)
 
 
 def _read_events(path: Path) -> pd.DataFrame:
     return normalize_events(pd.read_parquet(path))
+
+
+def _trades_path(directory: Path) -> Path:
+    """The small signals extract when present; the full table otherwise (local runs of the
+    jobs before the extract existed)."""
+    signals = directory / SIGNALS_FILE
+    return signals if signals.exists() else directory / TRADES_FILE
 
 
 def _read_trades(path: Path) -> pd.DataFrame:
@@ -137,10 +150,24 @@ def _read_trades(path: Path) -> pd.DataFrame:
     years of Form 4 rows) but carry almost no information, and the studies do not use them.
     Leaving them out keeps the API inside a small host's memory.
     """
-    trades = normalize_trades(pd.read_parquet(path))
-    trades = trades[trades["kind"].isin(SIGNAL_KINDS)].reset_index(drop=True)
-    for name in _TRADE_CATEGORIES:
-        trades[name] = trades[name].astype("category")
+    table = pq.read_table(path, filters=[("kind", "in", list(SIGNAL_KINDS))])
+    missing = [name for name in TRADE_COLUMNS if name not in table.column_names]
+    if missing:
+        raise ValueError(f"insider trades are missing columns: {missing}")
+    # Dictionary-encode the repeated text columns inside Arrow, so pandas receives categories
+    # directly. Going through Python strings first briefly needed several hundred MB.
+    columns = {}
+    for name in TRADE_COLUMNS:
+        column = table.column(name)
+        if name in _TRADE_CATEGORIES:
+            column = pc.cast(column, pa.string()).combine_chunks().dictionary_encode()
+        columns[name] = column
+    trades: pd.DataFrame = pa.table(columns).to_pandas()
+    for name in ("shares", "price", "shares_after"):
+        trades[name] = pd.to_numeric(trades[name], errors="coerce").astype("float64")
+    trades["issuer_cik"] = pd.to_numeric(trades["issuer_cik"]).astype("int64")
+    for name in ("filing_date", "trade_date"):
+        trades[name] = pd.to_datetime(trades[name]).dt.as_unit("ns")
     return trades
 
 

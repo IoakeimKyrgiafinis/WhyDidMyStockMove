@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.compute as pc
 
 from whymoved.adapters.snapshot import Snapshot
 from whymoved.domain.corporate_events import is_earnings, item_label
@@ -80,13 +82,7 @@ class Timeline:
         self.pooled: dict[str, object] | None = snapshot.insider_study
 
         # Row positions per ticker. A headline can name several tickers.
-        symbols = self._news["symbols"].astype(str).str.split(",")
-        exploded = symbols.explode()
-        self._news_rows = {
-            str(t): np.asarray(rows, dtype=np.int64)
-            for t, rows in exploded.groupby(exploded, sort=False).groups.items()
-            if t
-        }
+        self._news_rows = _rows_by_symbol(self._news["symbols"])
         self._event_rows = {
             str(t): np.asarray(rows, dtype=np.int64)
             for t, rows in self._events.groupby("ticker", sort=False).indices.items()
@@ -208,6 +204,23 @@ class Timeline:
         filings = self.filings(ticker)
         days = [pd.Timestamp(d) for d in filings.loc[filings["earnings"], "day"]]
         return reaction_size(self._explainer.daily(ticker)["z"], days)
+
+
+def _rows_by_symbol(symbols: pd.Series) -> dict[str, np.ndarray]:
+    """Row positions per ticker for comma-separated ticker lists, computed in Arrow so no
+    Python string is created per headline."""
+    if len(symbols) == 0:
+        return {}
+    lists = pc.split_pattern(pa.array(symbols, type=pa.string()), ",")
+    tickers = pc.list_flatten(lists).dictionary_encode()
+    parents = np.asarray(pc.list_parent_indices(lists), dtype=np.int64)
+    codes = np.asarray(tickers.indices, dtype=np.int64)
+    names = tickers.dictionary.to_pylist()
+    order = np.argsort(codes, kind="stable")
+    bounds = np.searchsorted(codes[order], np.arange(len(names) + 1))
+    return {
+        str(name): parents[order[bounds[i] : bounds[i + 1]]] for i, name in enumerate(names) if name
+    }
 
 
 def _naive(value: object) -> pd.Timestamp | None:

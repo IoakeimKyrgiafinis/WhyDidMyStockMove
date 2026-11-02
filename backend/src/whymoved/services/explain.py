@@ -23,7 +23,7 @@ from whymoved.domain.scoring import DEFAULT_ALPHA, expected_false_alarms, score_
 from whymoved.domain.universe import MARKET_ETF, UniverseMember
 from whymoved.domain.variance import VarianceSplit, variance_split
 
-DEFAULT_CACHE_SIZE = 512  # about eight entries per stock
+DEFAULT_CACHE_SIZE = 96  # about a dozen stocks; recomputing a stock takes well under a second
 SEARCH_LIMIT = 20
 
 

@@ -11,6 +11,10 @@ from whymoved.adapters.parquet_store import StoreError
 from whymoved.domain.insider import empty_trades, normalize_trades
 
 TRADES_FILE = "insider_trades.parquet"
+# Open-market purchases and sales only, for the API: a small file it can read on a host with
+# little memory. The full table stays for the jobs.
+SIGNALS_FILE = "insider_signals.parquet"
+SIGNAL_KINDS = ("open_market_buy", "open_market_sell")
 STATE_FILE = "insider_quarters.json"
 
 
@@ -31,13 +35,17 @@ class ParquetTradeStore:
             raise StoreError(f"the insider trades file is unreadable or malformed: {exc}") from exc
 
     def save(self, trades: pd.DataFrame) -> None:
+        """Write the full table and the signals-only extract; each replaces its file atomically."""
         self._directory.mkdir(parents=True, exist_ok=True)
-        temp = self._directory / f".{TRADES_FILE}.tmp"
-        try:
-            normalize_trades(trades).to_parquet(temp, engine="pyarrow")
-            os.replace(temp, self._directory / TRADES_FILE)
-        finally:
-            temp.unlink(missing_ok=True)
+        table = normalize_trades(trades)
+        signals = table[table["kind"].isin(SIGNAL_KINDS)].reset_index(drop=True)
+        for name, frame in ((TRADES_FILE, table), (SIGNALS_FILE, signals)):
+            temp = self._directory / f".{name}.tmp"
+            try:
+                frame.to_parquet(temp, engine="pyarrow")
+                os.replace(temp, self._directory / name)
+            finally:
+                temp.unlink(missing_ok=True)
 
 
 def load_imported(directory: Path) -> set[str]:
