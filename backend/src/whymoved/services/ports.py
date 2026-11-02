@@ -73,3 +73,9 @@ class InsiderTradeSource(Protocol):
     def trades(self, year: int, quarter: int) -> pd.DataFrame | None:
         """The quarter's trades, or None if it is not published (yet)."""
         ...
+
+
+class IntradayProvider(Protocol):
+    """Source of intraday bar closes (wide frame, naive UTC bar-start index)."""
+
+    def bars(self, symbols: Sequence[str], start: datetime, end: datetime) -> pd.DataFrame: ...

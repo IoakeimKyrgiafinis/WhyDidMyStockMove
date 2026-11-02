@@ -21,13 +21,16 @@ from whymoved.api.schemas import (
     MarkersResponse,
     MetaResponse,
     ProfileResponse,
+    ReactionsResponse,
     SearchResponse,
     StockRef,
     VarianceOut,
 )
 from whymoved.api.state import DataState
+from whymoved.domain.intraday import DEFAULT_ALPHA
 from whymoved.domain.universe import UniverseMember
 from whymoved.services.explain import MoveExplainer
+from whymoved.services.reactions import ReactionService
 
 ERRORS: dict[int | str, dict[str, object]] = {
     404: {"model": ErrorResponse, "description": "Unknown ticker"},
@@ -284,4 +287,36 @@ def attribution(
         n_flagged=a.n_flagged,
         expected_flags=a.expected_flags,
         alpha=explainer.alpha,
+    )
+
+
+@router.get("/stocks/{ticker}/days/{day}/reactions", response_model=ReactionsResponse)
+def reactions(ticker: str, day: date, request: Request, explainer: Explainer) -> ReactionsResponse:
+    """How the stock moved beyond market and sector right after each headline of the day.
+
+    Fetches 5-minute bars on demand, so it is slower than the other endpoints; results are
+    cached per stock and day.
+    """
+    member = explainer.member(ticker)
+    service: ReactionService = request.app.state.reactions
+    if not service.available:
+        return ReactionsResponse(
+            ticker=member.ticker,
+            date=day,
+            available=False,
+            message="Intraday reactions are not configured on this server.",
+            alpha=DEFAULT_ALPHA,
+            expected_false_flags=0.0,
+            groups=[],
+        )
+    groups = service.day_reactions(explainer, member.ticker, day)
+    scored = sum(1 for g in groups if g.reaction is not None and g.reaction.p_empirical is not None)
+    return ReactionsResponse(
+        ticker=member.ticker,
+        date=day,
+        available=True,
+        message=None,
+        alpha=DEFAULT_ALPHA,
+        expected_false_flags=DEFAULT_ALPHA * scored,
+        groups=convert.headline_groups(groups),
     )

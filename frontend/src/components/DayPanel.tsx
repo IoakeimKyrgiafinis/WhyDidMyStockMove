@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { api, type DayDetail } from "../api";
 import { fmtDate, money, num, pct, pValue, rarity, titleCase, useAsync } from "../lib";
+import { HeadlineReactions } from "./HeadlineReactions";
 import { Info } from "./Info";
 
 const Z95 = 1.96;
@@ -127,14 +128,6 @@ function DayBody({ day }: { day: DayDetail }) {
   );
 }
 
-const TIME_FMT = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/New_York",
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
-
 /** Headlines, 8-K filings and insider filings that became public in time for this session. */
 function DayItems({ day }: { day: DayDetail }) {
   const { headlines, filings, insiders } = day.items;
@@ -172,14 +165,7 @@ function DayItems({ day }: { day: DayDetail }) {
           <span className="item__meta">filed {fmtDate(i.filing_date)}</span>
         </a>
       ))}
-      {headlines.slice(0, 12).map((h) => (
-        <a key={h.url + h.created_at} className="item item--news" href={h.url} target="_blank" rel="noreferrer">
-          <span className="item__kind">{h.source}</span>
-          <span className="item__text">{h.headline}</span>
-          <span className="item__meta">{TIME_FMT.format(new Date(`${h.created_at}Z`))} ET</span>
-        </a>
-      ))}
-      {headlines.length > 12 && <p className="muted small">and {headlines.length - 12} more headlines</p>}
+      <HeadlineReactions ticker={day.ticker} date={day.date} headlines={headlines} />
     </div>
   );
 }

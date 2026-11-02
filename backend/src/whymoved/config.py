@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     snapshot_url: str = ""
     snapshot_refresh_hours: float = 6.0
 
+    # Optional: intraday headline reactions fetch 5-minute bars on demand. Without keys the
+    # rest of the site works and the reaction chips say they are unavailable.
+    alpaca_key_id: SecretStr | None = None
+    alpaca_secret_key: SecretStr | None = None
+    alpaca_feed: Literal["iex", "sip"] = "iex"
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

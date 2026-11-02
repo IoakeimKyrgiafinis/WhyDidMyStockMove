@@ -1026,3 +1026,58 @@ line.grid {
 .tests thead th:first-child {
   text-align: left;
 }
+
+/* ---- M5: headline reactions ---- */
+
+.line--expected {
+  stroke: var(--c-market);
+  stroke-dasharray: 4 3;
+}
+.ci-band--expected {
+  fill: var(--c-market);
+}
+.reaction {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.reaction--flag {
+  border-color: color-mix(in srgb, var(--flag) 45%, var(--line));
+}
+.reaction .item {
+  border-width: 0 0 0 3px;
+  padding: 4px 8px;
+}
+.reaction__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rchip {
+  border: 1px solid var(--line);
+  background: var(--grid);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  font-family: var(--mono);
+}
+.rchip:hover {
+  border-color: var(--accent);
+}
+.rchip--flag {
+  background: color-mix(in srgb, var(--flag) 12%, transparent);
+  border-color: color-mix(in srgb, var(--flag) 40%, transparent);
+}
+.reaction__warn {
+  margin: 0;
+  color: var(--caution);
+}
+.reaction__detail .facts {
+  grid-template-columns: repeat(3, 1fr);
+}

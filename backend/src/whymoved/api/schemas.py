@@ -255,3 +255,48 @@ class InsidersResponse(BaseModel):
     study: StockStudyOut | None
     earnings: ReactionOut | None
     pooled: dict[str, object] | None
+
+
+# ---- M5: intraday reactions ----
+
+
+class WindowOut(BaseModel):
+    abnormal: float
+    z: float | None
+    minutes: int
+
+
+class ReactionPath(BaseModel):
+    minutes: list[int]
+    actual: list[float]
+    expected: list[float]
+    band: list[float]
+
+
+class HeadlineReactionOut(BaseModel):
+    kind: Literal["intraday", "overnight"]
+    session: date
+    before: WindowOut | None
+    after: WindowOut
+    p_empirical: float | None
+    n_reference: int
+    flagged: bool
+    moved_before: bool
+    path: ReactionPath | None
+
+
+class HeadlineGroupOut(BaseModel):
+    headlines: list[HeadlineOut]
+    published: datetime  # New York time
+    reaction: HeadlineReactionOut | None
+    error: str | None
+
+
+class ReactionsResponse(BaseModel):
+    ticker: str
+    date: date
+    available: bool
+    message: str | None
+    alpha: float
+    expected_false_flags: float
+    groups: list[HeadlineGroupOut]

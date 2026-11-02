@@ -363,3 +363,73 @@ export function EventPathChart({
     </div>
   );
 }
+
+/** Cumulative stock return around a headline next to what market and sector predicted. */
+export function ReactionChart({
+  minutes,
+  actual,
+  expected,
+  band,
+}: {
+  minutes: number[];
+  actual: number[];
+  expected: number[];
+  band: number[];
+}) {
+  const [ref, width] = useWidth<HTMLDivElement>();
+  const height = 170;
+  const lows = expected.map((e, k) => e - band[k]);
+  const highs = expected.map((e, k) => e + band[k]);
+  const all = [...actual, ...lows, ...highs, 0];
+  const pad = (Math.max(...all) - Math.min(...all)) * 0.1 || 0.002;
+  const y0 = Math.min(...all) - pad;
+  const y1 = Math.max(...all) + pad;
+  const innerW = width - PAD.left - PAD.right;
+  const innerH = height - PAD.top - PAD.bottom;
+  const lo = minutes[0];
+  const hi = minutes[minutes.length - 1];
+  const x = (m: number) => PAD.left + ((m - lo) / Math.max(hi - lo, 1)) * innerW;
+  const y = (v: number) => PAD.top + ((y1 - v) / (y1 - y0)) * innerH;
+  const line = (values: number[]) => values.map((v, k) => `${k ? "L" : "M"}${x(minutes[k])},${y(v)}`).join("");
+  const bandPath = `${highs.map((v, k) => `${k ? "L" : "M"}${x(minutes[k])},${y(v)}`).join("")}${lows
+    .map((v, k) => [k, v] as const)
+    .reverse()
+    .map(([k, v]) => `L${x(minutes[k])},${y(v)}`)
+    .join("")}Z`;
+
+  return (
+    <div className="chart" ref={ref}>
+      <svg width={width} height={height} role="img" aria-label="Stock path around the headline against the expected path">
+        {niceTicks(y0, y1, 4).map((t) => (
+          <g key={t}>
+            <line className={t === 0 ? "axis-zero" : "grid"} x1={PAD.left} x2={width - PAD.right} y1={y(t)} y2={y(t)} />
+            <text className="tick" x={PAD.left - 6} y={y(t)} dy="0.32em" textAnchor="end">
+              {pct(t, 1, false)}
+            </text>
+          </g>
+        ))}
+        {lo <= 0 && hi >= 0 && <line className="crosshair" x1={x(0)} x2={x(0)} y1={PAD.top} y2={PAD.top + innerH} />}
+        <path className="ci-band ci-band--expected" d={bandPath} />
+        <path className="line line--expected" d={line(expected)} />
+        <path className="line line--stock" d={line(actual)} />
+        {minutes
+          .filter((m) => m % 15 === 0)
+          .map((m) => (
+            <text key={m} className="tick" x={x(m)} y={height - 6} textAnchor="middle">
+              {m === 0 ? "headline" : `${m > 0 ? "+" : ""}${m}m`}
+            </text>
+          ))}
+      </svg>
+      <div className="legend">
+        <span>
+          <span className="swatch swatch--stock" />
+          Stock
+        </span>
+        <span>
+          <span className="swatch swatch--market" />
+          Expected from market and sector (95% band)
+        </span>
+      </div>
+    </div>
+  );
+}

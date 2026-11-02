@@ -208,6 +208,41 @@ export interface Insiders {
   pooled: { as_of: string; pre: number; post: number; studies: Partial<Record<Signal, PooledStudy>> } | null;
 }
 
+// ---- M5: intraday reactions ----
+
+export interface ReactionWindow {
+  abnormal: number;
+  z: number | null;
+  minutes: number;
+}
+
+export interface HeadlineReaction {
+  kind: "intraday" | "overnight";
+  session: string;
+  before: ReactionWindow | null;
+  after: ReactionWindow;
+  p_empirical: number | null;
+  n_reference: number;
+  flagged: boolean;
+  moved_before: boolean;
+  path: { minutes: number[]; actual: number[]; expected: number[]; band: number[] } | null;
+}
+
+export interface HeadlineGroup {
+  headlines: Headline[];
+  published: string; // New York time, no zone
+  reaction: HeadlineReaction | null;
+  error: string | null;
+}
+
+export interface Reactions {
+  available: boolean;
+  message: string | null;
+  alpha: number;
+  expected_false_flags: number;
+  groups: HeadlineGroup[];
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -254,4 +289,6 @@ export const api = {
   markers: (ticker: string, signal?: AbortSignal) =>
     get<{ ticker: string; markers: Marker[] }>(`/api/v1/stocks/${enc(ticker)}/markers`, signal).then((r) => r.markers),
   insiders: (ticker: string, signal?: AbortSignal) => get<Insiders>(`/api/v1/stocks/${enc(ticker)}/insiders`, signal),
+  reactions: (ticker: string, date: string, signal?: AbortSignal) =>
+    get<Reactions>(`/api/v1/stocks/${enc(ticker)}/days/${date}/reactions`, signal),
 };

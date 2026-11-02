@@ -11,14 +11,19 @@ from scipy.stats import t as student_t
 from whymoved.api.schemas import (
     CarTestOut,
     FilingOut,
+    HeadlineGroupOut,
     HeadlineOut,
+    HeadlineReactionOut,
     InsiderFilingOut,
     PermutationOut,
     ReactionOut,
+    ReactionPath,
     StockStudyOut,
+    WindowOut,
 )
 from whymoved.domain.insider_summary import SIGNAL_LABELS
 from whymoved.domain.reaction import ReactionSize
+from whymoved.services.reactions import HeadlineGroup
 from whymoved.services.timeline import StockInsiderStudy
 
 
@@ -158,3 +163,48 @@ def reaction(r: ReactionSize) -> ReactionOut:
         p_value=r.p_value,
         n_permutations=r.n_permutations,
     )
+
+
+def headline_groups(groups: list[HeadlineGroup]) -> list[HeadlineGroupOut]:
+    out: list[HeadlineGroupOut] = []
+    for g in groups:
+        r = g.reaction
+        reaction = None
+        if r is not None:
+            reaction = HeadlineReactionOut(
+                kind=r.kind,
+                session=r.session,
+                before=(
+                    WindowOut(
+                        abnormal=r.before.abnormal, z=num(r.before.z), minutes=r.before.minutes
+                    )
+                    if r.before
+                    else None
+                ),
+                after=WindowOut(
+                    abnormal=r.after.abnormal, z=num(r.after.z), minutes=r.after.minutes
+                ),
+                p_empirical=r.p_empirical,
+                n_reference=r.n_reference,
+                flagged=r.flagged,
+                moved_before=r.moved_before,
+                path=(
+                    ReactionPath(
+                        minutes=r.path_minutes,
+                        actual=r.path_actual,
+                        expected=r.path_expected,
+                        band=r.path_band,
+                    )
+                    if r.path_minutes
+                    else None
+                ),
+            )
+        out.append(
+            HeadlineGroupOut(
+                headlines=headlines(g.headlines),
+                published=g.published,
+                reaction=reaction,
+                error=g.error,
+            )
+        )
+    return out
