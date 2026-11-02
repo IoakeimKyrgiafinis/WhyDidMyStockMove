@@ -118,13 +118,20 @@ class MoveExplainer:
         self._n_boot = n_boot
         self._cache = _LruCache(cache_size)
         # Imported here: the timeline needs the explainer for prices and the daily table.
+        from whymoved.services.peers import PeerService
         from whymoved.services.timeline import Timeline
 
         self.timeline = Timeline(snapshot, self)
+        self.peers = PeerService(self)
 
     def cached[T](self, key: Hashable, compute: Callable[[], T]) -> T:
         """Compute once per key; least recently used entries are dropped first."""
         return self._cache.get_or_compute(key, compute)
+
+    @property
+    def close(self) -> pd.DataFrame:
+        """Daily closes of every symbol in the snapshot (shared, do not modify)."""
+        return self._close
 
     @property
     def members(self) -> list[UniverseMember]:

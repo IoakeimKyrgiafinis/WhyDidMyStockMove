@@ -6,6 +6,7 @@ import { CumulativeChart, DailyChart, MarkerLegend } from "./Charts";
 import { DayPanel } from "./DayPanel";
 import { HealthCard } from "./HealthCard";
 import { EarningsCard, InsiderPanel } from "./InsiderPanel";
+import { PeerPanel } from "./PeerPanel";
 import { Info } from "./Info";
 import { presetRange, type Range } from "../range";
 import { RangePicker } from "./RangePicker";
@@ -14,9 +15,10 @@ interface Props {
   ticker: string;
   day: string | null;
   onDay: (day: string | null) => void;
+  onTicker: (ticker: string) => void;
 }
 
-export function StockView({ ticker, day, onDay }: Props) {
+export function StockView({ ticker, day, onDay, onTicker }: Props) {
   const data = useAsync(ticker, (signal) =>
     Promise.all([api.profile(ticker, signal), api.daily(ticker, signal)]),
   );
@@ -31,10 +33,22 @@ export function StockView({ ticker, day, onDay }: Props) {
     );
   }
   const [profile, daily] = data.data;
-  return <Loaded key={ticker} profile={profile} daily={daily} day={day} onDay={onDay} />;
+  return <Loaded key={ticker} profile={profile} daily={daily} day={day} onDay={onDay} onTicker={onTicker} />;
 }
 
-function Loaded({ profile, daily, day, onDay }: { profile: Profile; daily: Daily; day: string | null; onDay: Props["onDay"] }) {
+function Loaded({
+  profile,
+  daily,
+  day,
+  onDay,
+  onTicker,
+}: {
+  profile: Profile;
+  daily: Daily;
+  day: string | null;
+  onDay: Props["onDay"];
+  onTicker: Props["onTicker"];
+}) {
   const [chosen, setRange] = useState<Range>(() => presetRange(daily.dates, "1Y"));
   const selected = day ? daily.dates.indexOf(day) : -1;
   // A shared link may point at a day outside the chosen range: widen the range to show it.
@@ -110,6 +124,7 @@ function Loaded({ profile, daily, day, onDay }: { profile: Profile; daily: Daily
           </section>
           {insiders.state === "ready" && <EarningsCard data={insiders.data} />}
           {insiders.state === "ready" && <InsiderPanel data={insiders.data} />}
+          <PeerPanel ticker={s.ticker} day={day && selected >= 0 ? day : null} onTicker={onTicker} />
           {insiders.state === "error" && (
             <section className="card">
               <p className="error">Insider data could not be loaded: {insiders.error.message}</p>

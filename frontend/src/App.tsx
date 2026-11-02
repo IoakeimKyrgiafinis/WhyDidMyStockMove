@@ -47,6 +47,7 @@ export default function App() {
             ticker={route.ticker}
             day={route.day}
             onDay={(day) => go({ ticker: route.ticker, day }, true)}
+            onTicker={(t) => go({ ticker: t, day: null })}
           />
         ) : (
           <Landing onSelect={(t) => go({ ticker: t, day: null })} />

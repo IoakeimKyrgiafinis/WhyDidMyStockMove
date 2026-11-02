@@ -243,6 +243,92 @@ export interface Reactions {
   groups: HeadlineGroup[];
 }
 
+// ---- M6: peers ----
+
+export type PeerLayer = "residual" | "raw" | "spillover";
+
+export interface PeerRow {
+  ticker: string;
+  name: string;
+  sector: string;
+  corr_selection: number;
+  ci_low_selection: number;
+  ci_high_selection: number;
+  corr_validation: number | null;
+  ci_low_validation: number | null;
+  ci_high_validation: number | null;
+  spillover_beta: number | null;
+  spillover_se: number | null;
+}
+
+export interface PeerSummary {
+  target: string;
+  selection_start: string;
+  split: string;
+  end: string;
+  n_universe: number;
+  peers: PeerRow[];
+  order: string[];
+  grids: Record<PeerLayer, (number | null)[][]>;
+  fdr_q: number;
+}
+
+export interface CointegrationResult {
+  ticker: string;
+  statistic?: number;
+  p_value?: number;
+  hedge_ratio?: number;
+  q_value?: number;
+  cointegrated?: boolean;
+  error?: string;
+}
+
+export interface Comove {
+  target: string;
+  date: string;
+  own_unexplained: number;
+  peers: { ticker: string; actual: number; expected: number; z: number | null; beta: number }[];
+}
+
+export interface ReplayFrame {
+  date: string;
+  residual: (number | null)[][];
+  raw: (number | null)[][];
+  mean_residual: number | null;
+  mean_raw: number | null;
+}
+
+/** Open a Server-Sent Events stream. Returns a function that closes it. */
+export function stream(
+  path: string,
+  handlers: Record<string, (data: unknown) => void>,
+  onError: (error: ApiError) => void,
+): () => void {
+  const source = new EventSource(`${API_URL}${path}`);
+  let finished = false;
+  for (const [name, handle] of Object.entries(handlers)) {
+    source.addEventListener(name, (event) => handle(JSON.parse((event as MessageEvent).data)));
+  }
+  source.addEventListener("done", () => {
+    finished = true;
+    source.close();
+  });
+  source.onerror = () => {
+    if (finished) return;
+    source.close();
+    // EventSource hides the status; ask once more with fetch to get the API's message.
+    const interrupted = new ApiError(0, "stream", "The connection was interrupted. Try again.");
+    get<unknown>(path).then(
+      () => onError(interrupted),
+      (err: unknown) => onError(err instanceof ApiError ? err : interrupted),
+    );
+  };
+  return () => {
+    finished = true;
+    source.close();
+  };
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -289,6 +375,8 @@ export const api = {
   markers: (ticker: string, signal?: AbortSignal) =>
     get<{ ticker: string; markers: Marker[] }>(`/api/v1/stocks/${enc(ticker)}/markers`, signal).then((r) => r.markers),
   insiders: (ticker: string, signal?: AbortSignal) => get<Insiders>(`/api/v1/stocks/${enc(ticker)}/insiders`, signal),
+  comove: (ticker: string, date: string, signal?: AbortSignal) =>
+    get<Comove>(`/api/v1/stocks/${enc(ticker)}/peers/comove?day=${date}`, signal),
   reactions: (ticker: string, date: string, signal?: AbortSignal) =>
     get<Reactions>(`/api/v1/stocks/${enc(ticker)}/days/${date}/reactions`, signal),
 };

@@ -1081,3 +1081,89 @@ line.grid {
 .reaction__detail .facts {
   grid-template-columns: repeat(3, 1fr);
 }
+
+/* ---- M6: peers ---- */
+
+.peer-grid {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  margin: 8px 0 12px;
+}
+.peer-grid__canvas {
+  flex: 1 1 340px;
+  max-width: 520px;
+}
+.peer-grid__canvas--small {
+  flex: 0 1 260px;
+}
+.peer-grid__hover,
+.replay__side {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.grid-canvas {
+  display: block;
+  border-radius: 4px;
+  cursor: crosshair;
+}
+.colorscale {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.colorscale__bar {
+  flex: 0 1 160px;
+  height: 8px;
+  border-radius: 4px;
+}
+.facts--hover {
+  grid-template-columns: 1fr;
+}
+.facts__title {
+  font-weight: 600;
+  color: var(--ink);
+}
+.peers-table .link {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.comove {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.comove__row {
+  display: grid;
+  grid-template-columns: 56px 1fr 150px;
+  gap: 10px;
+  align-items: center;
+}
+.comove__bar {
+  position: relative;
+  height: 14px;
+  background: var(--grid);
+  border-radius: 3px;
+}
+.comove__actual {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: var(--c-own);
+  border-radius: 2px;
+}
+.comove__expected {
+  position: absolute;
+  top: 6px;
+  height: 2px;
+  background: var(--ink);
+}
+.meanlines {
+  display: block;
+  margin: 6px 0;
+}
+.replay__side input[type="range"] {
+  width: 100%;
+}

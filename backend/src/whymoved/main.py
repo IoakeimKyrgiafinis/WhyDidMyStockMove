@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from whymoved.adapters.alpaca_intraday import build_intraday
 from whymoved.api.errors import install_error_handlers
 from whymoved.api.health import router as health_router
+from whymoved.api.peers import router as peers_router
 from whymoved.api.state import DataState
 from whymoved.api.v1 import router as v1_router
 from whymoved.config import Settings, get_settings
@@ -69,6 +70,7 @@ def create_app(
     install_error_handlers(app)
     app.include_router(health_router)
     app.include_router(v1_router)
+    app.include_router(peers_router)
     return app
 
 
