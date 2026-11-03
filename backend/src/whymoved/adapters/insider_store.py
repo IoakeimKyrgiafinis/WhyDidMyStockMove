@@ -63,11 +63,34 @@ def load_imported(directory: Path) -> set[str]:
     return set(keys)
 
 
-def save_imported(directory: Path, keys: Collection[str]) -> None:
+def load_covered_ciks(directory: Path) -> set[int] | None:
+    """Companies whose full history is stored, or None when the state predates tracking."""
+    path = directory / STATE_FILE
+    if not path.exists():
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise StoreError(f"cannot read {path}: {exc}") from exc
+    ciks = data.get("ciks") if isinstance(data, dict) else None
+    if ciks is None:
+        return None
+    if not isinstance(ciks, list) or not all(isinstance(c, int) for c in ciks):
+        raise StoreError(f"{path} does not have the expected format")
+    return set(ciks)
+
+
+def save_imported(
+    directory: Path, keys: Collection[str], ciks: Collection[int] | None = None
+) -> None:
+    """Record imported quarters and, when given, the companies their history covers."""
     directory.mkdir(parents=True, exist_ok=True)
     temp = directory / f".{STATE_FILE}.tmp"
+    state: dict[str, object] = {"imported": sorted(keys)}
+    if ciks is not None:
+        state["ciks"] = sorted(ciks)
     try:
-        temp.write_text(json.dumps({"imported": sorted(keys)}, indent=2), encoding="utf-8")
+        temp.write_text(json.dumps(state, indent=2), encoding="utf-8")
         os.replace(temp, directory / STATE_FILE)
     finally:
         temp.unlink(missing_ok=True)

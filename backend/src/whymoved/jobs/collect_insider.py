@@ -13,12 +13,17 @@ from whymoved.adapters.edgar import from_settings
 from whymoved.adapters.edgar_errors import EdgarError
 from whymoved.adapters.insider_bulk import BulkFormatError
 from whymoved.adapters.insider_source import EdgarInsiderSource
-from whymoved.adapters.insider_store import ParquetTradeStore, load_imported, save_imported
+from whymoved.adapters.insider_store import (
+    ParquetTradeStore,
+    load_covered_ciks,
+    load_imported,
+    save_imported,
+)
 from whymoved.adapters.parquet_store import StoreError
 from whymoved.config import JobSettings
 from whymoved.domain.insider import plan_quarters
 from whymoved.jobs.collect_news import load_universe_symbols
-from whymoved.services.insider import import_quarters
+from whymoved.services.insider import import_quarters, plan_backfill
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +90,24 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             store = ParquetTradeStore(data_dir)
             imported = load_imported(data_dir)
+            covered = load_covered_ciks(data_dir)
+            trades = store.load()
+
+            # Companies that joined the universe since the quarters were imported: read every
+            # quarter again for them alone, or they would only ever get the recent gap-fill.
+            new, backfill = plan_backfill(ticker_by_cik, covered, imported, history_start, today)
+            if new:
+                logger.info(
+                    "backfilling %d new companies over %d quarters", len(new), len(backfill)
+                )
+                trades, _ = import_quarters(
+                    EdgarInsiderSource(edgar, new),
+                    trades,
+                    backfill,
+                    lambda merged, _key: store.save(merged),
+                )
+            save_imported(data_dir, imported, ticker_by_cik)
+
             quarters = plan_quarters(history_start, today, imported)
             logger.info("importing %d quarters", len(quarters))
 
@@ -93,10 +116,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             def checkpoint(merged: pd.DataFrame, key: str) -> None:
                 store.save(merged)
                 done.add(key)
-                save_imported(data_dir, done)
+                save_imported(data_dir, done, ticker_by_cik)
 
             merged, report = import_quarters(
-                EdgarInsiderSource(edgar, ticker_by_cik), store.load(), quarters, checkpoint
+                EdgarInsiderSource(edgar, ticker_by_cik), trades, quarters, checkpoint
             )
     except (EdgarError, BulkFormatError, StoreError, ValueError) as exc:
         logger.error("insider job failed: %s", exc)

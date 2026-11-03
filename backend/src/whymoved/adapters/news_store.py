@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Sequence
 from pathlib import Path
@@ -10,6 +11,7 @@ from whymoved.adapters.parquet_store import StoreError
 from whymoved.domain.news import NewsItem
 
 NEWS_FILE = "news.parquet"
+SYMBOLS_FILE = "news_symbols.json"  # symbols whose full history has been fetched
 COLUMNS = ["id", "headline", "source", "url", "created_at", "updated_at", "symbols"]
 
 
@@ -79,3 +81,28 @@ class ParquetNewsStore:
             os.replace(temp, self._directory / NEWS_FILE)
         finally:
             temp.unlink(missing_ok=True)
+
+
+def load_news_symbols(directory: Path) -> set[str] | None:
+    """Symbols whose headline history is complete, or None if never recorded."""
+    path = directory / SYMBOLS_FILE
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise StoreError(f"cannot read {path}: {exc}") from exc
+    symbols = data.get("symbols") if isinstance(data, dict) else None
+    if not isinstance(symbols, list) or not all(isinstance(s, str) for s in symbols):
+        raise StoreError(f"{path} does not have the expected format")
+    return set(symbols)
+
+
+def save_news_symbols(directory: Path, symbols: Sequence[str]) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    temp = directory / f".{SYMBOLS_FILE}.tmp"
+    try:
+        temp.write_text(json.dumps({"symbols": sorted(symbols)}, indent=2), encoding="utf-8")
+        os.replace(temp, directory / SYMBOLS_FILE)
+    finally:
+        temp.unlink(missing_ok=True)

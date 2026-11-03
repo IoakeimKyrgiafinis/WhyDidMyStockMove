@@ -156,3 +156,25 @@ def test_progress_is_reported_after_each_quarter_so_a_failure_keeps_earlier_ones
         )
 
     assert saved == [(1, "2026q1"), (2, "2026q2")]
+
+
+def test_backfill_targets_only_new_companies_over_imported_quarters() -> None:
+    from whymoved.services.insider import plan_backfill
+
+    imported = {"2026q1", "2026q2"}
+    new, quarters = plan_backfill(
+        {1: "OLD", 2: "PLTR"}, {1}, imported, date(2026, 1, 1), date(2026, 11, 3)
+    )
+
+    assert new == {2: "PLTR"}
+    assert quarters == [(2026, 1), (2026, 2)]  # not 2026q3/q4: the normal import reads those
+
+
+def test_backfill_is_skipped_when_nothing_is_new_or_nothing_is_imported() -> None:
+    from whymoved.services.insider import plan_backfill
+
+    span = (date(2026, 1, 1), date(2026, 11, 3))
+    assert plan_backfill({1: "OLD"}, {1}, {"2026q1"}, *span) == ({}, [])
+    assert plan_backfill({1: "OLD"}, set(), set(), *span) == ({}, [])
+    # State written before companies were tracked: everyone is backfilled once
+    assert plan_backfill({1: "OLD"}, None, {"2026q1"}, *span)[0] == {1: "OLD"}

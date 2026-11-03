@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 
 import pandas as pd
 
-from whymoved.domain.insider import empty_trades, normalize_trades, quarter_key
+from whymoved.domain.insider import empty_trades, normalize_trades, plan_quarters, quarter_key
 from whymoved.services.ports import InsiderTradeSource
 
 logger = logging.getLogger(__name__)
@@ -73,3 +74,31 @@ def import_quarters(
     return merged, ImportReport(
         imported=tuple(imported), unavailable=tuple(unavailable), n_total=len(merged)
     )
+
+
+def plan_backfill(
+    ticker_by_cik: Mapping[int, str],
+    covered: Collection[int] | None,
+    imported: Collection[str],
+    history_start: date,
+    today: date,
+) -> tuple[dict[int, str], list[tuple[int, int]]]:
+    """Companies whose history is missing, and the already-imported quarters to re-read for them.
+
+    A company that joins the universe after its quarters were imported would otherwise only get
+    the recent gap-fill. `covered` None (state written before companies were tracked) means
+    every company is treated as new, once. Nothing is imported yet → nothing to backfill: the
+    normal import reads every quarter for everyone.
+    """
+    done = set(imported)
+    if not done:
+        return {}, []
+    new = {cik: t for cik, t in ticker_by_cik.items() if covered is None or cik not in covered}
+    if not new:
+        return {}, []
+    quarters = [
+        q
+        for q in plan_quarters(history_start, today, set(), refresh_latest=0)
+        if quarter_key(*q) in done
+    ]
+    return new, quarters

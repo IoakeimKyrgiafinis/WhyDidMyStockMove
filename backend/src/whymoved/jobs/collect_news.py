@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from whymoved.adapters.alpaca import AlpacaError, build_client
 from whymoved.adapters.alpaca_news import AlpacaNews
-from whymoved.adapters.news_store import ParquetNewsStore
+from whymoved.adapters.news_store import ParquetNewsStore, load_news_symbols, save_news_symbols
 from whymoved.adapters.parquet_store import StoreError
 from whymoved.config import JobSettings
 from whymoved.services.news import collect_news
@@ -75,6 +75,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     client = build_client(settings.alpaca_key_id, settings.alpaca_secret_key)
 
     try:
+        known = load_news_symbols(data_dir)
+        # No record yet (the first run with tracking): every symbol gets its full history once.
+        backfill = [s for s in symbols if known is None or s not in known]
         with AlpacaNews(client) as provider:
             _, report = collect_news(
                 provider,
@@ -83,7 +86,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 history_start=history_start,
                 end=end,
                 force_full=args.force_full,
+                backfill=backfill,
             )
+        save_news_symbols(data_dir, symbols)
     except (AlpacaError, StoreError, ValueError) as exc:
         logger.error("news job failed: %s", exc)
         return 1

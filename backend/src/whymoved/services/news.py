@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -50,13 +50,15 @@ def collect_news(
     end: datetime,
     overlap: timedelta = DEFAULT_OVERLAP,
     force_full: bool = False,
+    backfill: Collection[str] = (),
 ) -> tuple[list[NewsItem], NewsReport]:
     """Bring the stored headlines up to `end` and save them.
 
     Stored headlines older than `history_start` are dropped, so the file stays small. Normal
     runs fetch from the newest stored headline minus `overlap` (updated articles and late tags
     are picked up and deduplicated by id). With `force_full`, stored headlines are ignored and
-    everything since `history_start` is fetched again.
+    everything since `history_start` is fetched again. Symbols in `backfill` (new to the
+    universe) get their whole history from `history_start` while the rest stay incremental.
     """
     names = list(symbols)
     if not names:
@@ -74,9 +76,14 @@ def collect_news(
         newest = max(item.created_at for item in existing)
         start = max(history_start, newest - overlap)
 
+    new = [s for s in names if s in set(backfill)] if existing else []
+    rest = [s for s in names if s not in set(new)]
     fresh: list[NewsItem] = []
-    if start < end:
-        fresh = provider.news(names, start, end)
+    if rest and start < end:
+        fresh += provider.news(rest, start, end)
+    if new:
+        logger.info("backfilling headlines for %d new symbols", len(new))
+        fresh += provider.news(new, history_start, end)
 
     known = {item.id for item in existing}
     merged = merge_news(existing, fresh, cutoff=history_start)

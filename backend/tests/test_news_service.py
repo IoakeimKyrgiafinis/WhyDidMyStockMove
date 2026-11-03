@@ -147,3 +147,37 @@ def test_invalid_requests_are_rejected() -> None:
         collect_news(provider, store, ["AAA"], history_start=END, end=HISTORY)
     with pytest.raises(ValueError, match="overlap"):
         collect_news(provider, store, ["AAA"], history_start=HISTORY, end=END, overlap=timedelta(0))
+
+
+def test_a_new_symbol_gets_its_full_history_while_the_rest_stay_incremental() -> None:
+    stored = item(2, datetime(2026, 10, 20))
+    old_pltr = item(7, datetime(2026, 10, 3), symbols=("PLTR",))
+    provider = FakeNewsProvider(
+        [stored, old_pltr, item(8, datetime(2026, 10, 29), symbols=("PLTR",))]
+    )
+    store = InMemoryNewsStore([stored])
+
+    merged, _ = collect_news(
+        provider, store, ["AAA", "PLTR"], history_start=HISTORY, end=END, backfill=["PLTR"]
+    )
+
+    assert provider.calls == [
+        (("AAA",), datetime(2026, 10, 20) - DEFAULT_OVERLAP, END),
+        (("PLTR",), HISTORY, END),
+    ]
+    assert [i.id for i in merged] == [7, 2, 8]  # PLTR's older headline is filled in
+
+
+def test_backfill_is_ignored_on_a_first_run_that_fetches_everything_anyway() -> None:
+    provider = FakeNewsProvider([])
+
+    collect_news(
+        provider,
+        InMemoryNewsStore([]),
+        ["AAA", "PLTR"],
+        history_start=HISTORY,
+        end=END,
+        backfill=["PLTR"],
+    )
+
+    assert provider.calls == [(("AAA", "PLTR"), HISTORY, END)]
