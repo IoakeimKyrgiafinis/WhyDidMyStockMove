@@ -26,8 +26,14 @@ def test_load_reads_prices_and_members(tmp_path: Path) -> None:
 
     assert [m.ticker for m in snapshot.members] == ["AAA", "BBB", "ABC", "NEW"]
     assert snapshot.as_of == market.snapshot.as_of
+    assert (snapshot.close.dtypes == "float32").all()  # halves memory on a small host
     pd.testing.assert_frame_equal(
-        snapshot.close, market.close, check_freq=False, check_index_type=False
+        snapshot.close,
+        market.close,
+        check_freq=False,
+        check_index_type=False,
+        check_dtype=False,
+        rtol=1e-6,
     )
 
 

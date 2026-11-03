@@ -32,6 +32,7 @@ REQUIRED_FILES = (CLOSE_FILE, UNIVERSE_FILE)  # the API never reads volumes
 # Produced by collectors that may fail on a given night; the site works without them.
 OPTIONAL_FILES = (NEWS_FILE, EVENTS_FILE, SIGNALS_FILE, INSIDER_STUDY_FILE)
 NEWS_COLUMNS = ["headline", "source", "url", "created_at", "symbols"]
+NEWS_DAYS = 400
 # Repeated text columns of the trades table, stored as categories to keep memory small.
 _TRADE_CATEGORIES = (
     "accession",
@@ -99,7 +100,9 @@ def load_snapshot(directory: Path) -> Snapshot:
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise SnapshotError(f"cannot read {path}: {exc}") from exc
 
-    close = raw_close.sort_index()
+    # 32-bit prices: seven significant digits is plenty for daily closes, every calculation
+    # converts to 64-bit itself, and it halves the largest table on a 512 MB host.
+    close = raw_close.sort_index().astype("float32")
     close.index = pd.DatetimeIndex(close.index).normalize()
     return Snapshot(
         close=close,
@@ -125,10 +128,17 @@ def _optional[T](path: Path, read: Callable[[Path], T], default: T) -> T:
 
 
 def _read_news(path: Path) -> pd.DataFrame:
-    """Headlines kept in Arrow's compact string format: two years of news for the whole
-    universe is hundreds of thousands of rows, too many to hold as Python strings."""
+    """The last NEWS_DAYS of headlines, in Arrow's compact string format.
+
+    Two years of news for the whole universe is hundreds of thousands of rows: too many to
+    hold as Python strings, and more than a 512 MB host can spare. The snapshot keeps all of
+    it; the API serves the recent part.
+    """
     frame = pd.read_parquet(path, columns=NEWS_COLUMNS, dtype_backend="pyarrow")
     frame["created_at"] = pd.to_datetime(frame["created_at"].astype("datetime64[ns]"))
+    if len(frame):
+        cutoff = frame["created_at"].max() - pd.Timedelta(days=NEWS_DAYS)
+        frame = frame[frame["created_at"] >= cutoff]
     return frame.sort_values("created_at", kind="mergesort").reset_index(drop=True)
 
 
