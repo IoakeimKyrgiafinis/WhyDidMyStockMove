@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gc
 import logging
 import threading
 from datetime import UTC, datetime
@@ -8,6 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from whymoved.adapters.snapshot import SnapshotError, download_snapshot, load_snapshot
+from whymoved.memory import release_memory
 from whymoved.services.explain import MoveExplainer
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ class DataState:
                 return
             self._explainer = None
             self._loading = True
-        gc.collect()
+        release_memory()
         try:
             explainer = MoveExplainer(load_snapshot(data_dir))
         except (SnapshotError, ValueError) as exc:
@@ -84,4 +84,5 @@ class DataState:
             self._error = None
             self._loading = False
             self.loaded_at = datetime.now(UTC)
+        release_memory()
         logger.info("snapshot loaded: %d stocks as of %s", len(explainer.members), explainer.as_of)

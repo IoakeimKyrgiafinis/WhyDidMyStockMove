@@ -16,6 +16,8 @@ from collections.abc import Awaitable, Callable, MutableMapping
 from datetime import UTC, datetime
 from typing import Any
 
+from whymoved.memory import release_memory_every
+
 Scope = MutableMapping[str, Any]
 Message = MutableMapping[str, Any]
 Receive = Callable[[], Awaitable[Message]]
@@ -25,6 +27,7 @@ ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 request_id: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
 access_log = logging.getLogger("whymoved.access")
 
+RELEASE_EVERY_SECONDS = 10.0
 _VALID_ID = re.compile(r"[A-Za-z0-9._-]{8,64}")
 # The data changes once a night, so browsers and CDNs may reuse answers for a while.
 DATA_MAX_AGE = 300
@@ -116,3 +119,5 @@ class RequestContextMiddleware:
                 },
             )
             request_id.reset(token)
+            # Heavy requests (a peer grid, a replay) free large temporaries; hand them back.
+            release_memory_every(RELEASE_EVERY_SECONDS)

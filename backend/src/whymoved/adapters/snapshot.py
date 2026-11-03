@@ -21,8 +21,9 @@ from whymoved.adapters.insider_store import SIGNAL_KINDS, SIGNALS_FILE, TRADES_F
 from whymoved.adapters.news_store import NEWS_FILE
 from whymoved.adapters.parquet_store import CLOSE_FILE
 from whymoved.domain.corporate_events import empty_events, normalize_events
-from whymoved.domain.insider import TRADE_COLUMNS, empty_trades
+from whymoved.domain.insider import empty_trades
 from whymoved.domain.universe import UniverseMember
+from whymoved.memory import release_memory
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +34,25 @@ REQUIRED_FILES = (CLOSE_FILE, UNIVERSE_FILE)  # the API never reads volumes
 OPTIONAL_FILES = (NEWS_FILE, EVENTS_FILE, SIGNALS_FILE, INSIDER_STUDY_FILE)
 NEWS_COLUMNS = ["headline", "source", "url", "created_at", "symbols"]
 NEWS_DAYS = 400
-# Repeated text columns of the trades table, stored as categories to keep memory small.
-_TRADE_CATEGORIES = (
+BATCH_ROWS = 50_000
+# The insider columns the site reads (filing summaries, timeline, studies).
+API_TRADE_COLUMNS = [
     "accession",
+    "issuer_cik",
+    "ticker",
+    "filing_date",
+    "trade_date",
+    "kind",
+    "shares",
+    "price",
+    "owner_name",
+    "owner_role",
+    "plan",
+]
+# Repeated text columns of the trades table, stored as categories to keep memory small.
+# Not "accession": nearly every filing has its own, so as a category it would still need a
+# Python string per filing; it stays an Arrow string instead.
+_TRADE_CATEGORIES = (
     "ticker",
     "form",
     "code",
@@ -104,14 +121,23 @@ def load_snapshot(directory: Path) -> Snapshot:
     # converts to 64-bit itself, and it halves the largest table on a 512 MB host.
     close = raw_close.sort_index()
     close.index = pd.DatetimeIndex(close.index).normalize()
+    # Each read frees large temporary buffers; give them back before the next file, or the
+    # peaks add up past a 512 MB host's limit (see whymoved.memory).
+    release_memory()
+    news = _optional(directory / NEWS_FILE, _read_news, pd.DataFrame(columns=NEWS_COLUMNS))
+    release_memory()
+    events = _optional(directory / EVENTS_FILE, _read_events, empty_events())
+    release_memory()
+    trades = _optional(_trades_path(directory), _read_trades, empty_trades())
+    release_memory()
     return Snapshot(
         close=close,
         members=members,
         as_of=as_of,
         history_start=history_start,
-        news=_optional(directory / NEWS_FILE, _read_news, pd.DataFrame(columns=NEWS_COLUMNS)),
-        events=_optional(directory / EVENTS_FILE, _read_events, empty_events()),
-        trades=_optional(_trades_path(directory), _read_trades, empty_trades()),
+        news=news,
+        events=events,
+        trades=trades,
         insider_study=_optional(directory / INSIDER_STUDY_FILE, _read_json, None),
     )
 
@@ -134,17 +160,39 @@ def _read_news(path: Path) -> pd.DataFrame:
     hold as Python strings, and more than a 512 MB host can spare. The snapshot keeps all of
     it; the API serves the recent part.
     """
-    # Find the newest timestamp from the small timestamp column first, then let the reader
-    # skip older rows, so two years of headline text is never held at once.
     created = pq.read_table(path, columns=["created_at"]).column("created_at")
     if len(created) == 0:
         return pd.DataFrame(columns=NEWS_COLUMNS)
     newest = pc.max(created).as_py()
     cutoff = pa.scalar(newest - timedelta(days=NEWS_DAYS), type=created.type)
-    table = pq.read_table(path, columns=NEWS_COLUMNS, filters=[("created_at", ">=", cutoff)])
+    table = _read_in_batches(
+        path, NEWS_COLUMNS, lambda b: pc.greater_equal(b.column("created_at"), cutoff)
+    )
     frame: pd.DataFrame = table.to_pandas(types_mapper=pd.ArrowDtype)
     frame["created_at"] = pd.to_datetime(frame["created_at"].astype("datetime64[ns]"))
     return frame.sort_values("created_at", kind="mergesort").reset_index(drop=True)
+
+
+def _read_in_batches(
+    path: Path,
+    columns: Sequence[str],
+    keep: Callable[[pa.RecordBatch], pa.Array],
+    read_dictionary: Sequence[str] = (),
+) -> pa.Table:
+    """Read `columns` a batch of rows at a time, keeping the rows `keep` selects.
+
+    Reading the whole file and then filtering builds every row first: for the news and trades
+    files that is a 130 MB spike on top of what is kept. Batch by batch, the peak is what is
+    kept plus one batch.
+    """
+    file = pq.ParquetFile(path, read_dictionary=list(read_dictionary) or None)
+    parts = [
+        pa.Table.from_batches([batch]).filter(keep(batch))
+        for batch in file.iter_batches(batch_size=BATCH_ROWS, columns=list(columns))
+    ]
+    if not parts:
+        return file.schema_arrow.empty_table().select(list(columns))
+    return pa.concat_tables(parts, promote_options="permissive")
 
 
 def _read_close(path: Path) -> pd.DataFrame:
@@ -175,26 +223,42 @@ def _trades_path(directory: Path) -> Path:
 
 
 def _read_trades(path: Path) -> pd.DataFrame:
-    """Open-market purchases and sales only.
+    """Open-market purchases and sales only, and only the columns the site uses.
 
     Awards, option exercises and tax withholding are most of the table (about 60% of seven
     years of Form 4 rows) but carry almost no information, and the studies do not use them.
-    Leaving them out keeps the API inside a small host's memory.
+    The repeated text columns arrive dictionary-encoded and become pandas categories without
+    a Python string per value. All of this keeps the API inside a 512 MB host.
     """
-    table = pq.read_table(path, filters=[("kind", "in", list(SIGNAL_KINDS))])
-    missing = [name for name in TRADE_COLUMNS if name not in table.column_names]
+    names = pq.ParquetFile(path).schema_arrow.names
+    missing = [name for name in API_TRADE_COLUMNS if name not in names]
     if missing:
         raise ValueError(f"insider trades are missing columns: {missing}")
-    # Dictionary-encode the repeated text columns inside Arrow, so pandas receives categories
-    # directly. Going through Python strings first briefly needed several hundred MB.
+    dictionaries = [n for n in _TRADE_CATEGORIES if n in API_TRADE_COLUMNS]
+    if path.name == SIGNALS_FILE:
+        # Already only purchases and sales: one read with no filter is the cheapest (measured
+        # on Linux: a 130 MB smaller peak than filtering batch by batch).
+        table = pq.read_table(path, columns=API_TRADE_COLUMNS, read_dictionary=dictionaries)
+    else:
+        signal = pa.array(list(SIGNAL_KINDS))
+        table = _read_in_batches(
+            path,
+            API_TRADE_COLUMNS,
+            lambda b: pc.is_in(pc.cast(b.column("kind"), pa.string()), value_set=signal),
+            read_dictionary=dictionaries,
+        )
+    # Each batch brings its own dictionaries: merge them in Arrow (no strings are expanded).
+    table = table.unify_dictionaries()
     columns = {}
-    for name in TRADE_COLUMNS:
-        column = table.column(name)
-        if name in _TRADE_CATEGORIES:
-            column = pc.cast(column, pa.string()).combine_chunks().dictionary_encode()
+    for name in API_TRADE_COLUMNS:
+        column = table.column(name).combine_chunks()
+        if name in _TRADE_CATEGORIES and not pa.types.is_dictionary(column.type):
+            column = column.dictionary_encode()
         columns[name] = column
-    trades: pd.DataFrame = pa.table(columns).to_pandas()
-    for name in ("shares", "price", "shares_after"):
+    trades: pd.DataFrame = pa.table(columns).to_pandas(
+        types_mapper=lambda t: pd.ArrowDtype(t) if t in (pa.string(), pa.large_string()) else None
+    )
+    for name in ("shares", "price"):
         trades[name] = pd.to_numeric(trades[name], errors="coerce").astype("float64")
     trades["issuer_cik"] = pd.to_numeric(trades["issuer_cik"]).astype("int64")
     for name in ("filing_date", "trade_date"):
