@@ -83,7 +83,7 @@ def test_a_stock_with_too_little_history_is_reported_and_left_out() -> None:
     selection = select_universe(DailyBars(close=close, volume=bars.volume), STOCKS, FACTORS)
 
     assert "CCC" not in selection.tickers
-    assert "coverage" in selection.failed["CCC"]
+    assert "days of history" in selection.failed["CCC"]
 
 
 def test_a_failing_factor_stops_the_job() -> None:

@@ -21,3 +21,10 @@ appear in logs. The API process uses lenient settings so it can start without th
 
 Assumptions to check against the real file: the holdings CSV layout, the sector names, and
 the class-share ticker aliases.
+
+Update (November 2026): coverage and gaps are now measured from each stock's first trade, with
+a minimum of 260 trading days of history (the factor model needs 252 earlier days to explain a
+day). The original rule counted the days before a listing as missing data, so every stock that
+listed after the window began failed, including PLTR, ABNB, SNOW, COIN, RIVN and DASH. On the
+real data the clean universe grows from 1,972 to 2,425 stocks; a stock that stops trading still
+fails, because days after its last trade still count.

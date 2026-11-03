@@ -22,6 +22,9 @@ class QualityConfig:
 
     min_coverage: float = 0.95
     max_gap_days: int = 5
+    # The factor model needs 252 earlier days to explain a day, so a stock with less cannot
+    # be shown. Measured from the stock's first trade: a 2020 listing is not "missing" 2019.
+    min_history_days: int = 260
     min_median_price: float = 3.0
     max_abs_return: float = 0.6
     max_extreme_moves: int = 2
@@ -32,6 +35,8 @@ class QualityConfig:
             raise ValueError("min_coverage must be in (0, 1]")
         if self.max_gap_days < 0:
             raise ValueError("max_gap_days must be non-negative")
+        if self.min_history_days < 1:
+            raise ValueError("min_history_days must be at least 1")
         if self.min_median_price < 0.0:
             raise ValueError("min_median_price must be non-negative")
         if self.max_abs_return <= 0.0:
@@ -55,8 +60,11 @@ def _assess_column(col: FloatArray, cfg: QualityConfig) -> dict[str, Any]:
     valid = np.isfinite(col)
     prices = col[valid]
     n_obs = int(valid.sum())
-    coverage = n_obs / len(col)
-    gap = _longest_run(~valid)
+    # Coverage and gaps count from the first trade: days before a listing are not missing data.
+    # Days after the last trade still count, so a delisted or stalled stock still fails.
+    listed = valid[int(np.argmax(valid)) :] if n_obs else valid
+    coverage = n_obs / len(listed) if len(listed) else 0.0
+    gap = _longest_run(~listed)
     nonpositive = bool((prices <= 0.0).any())
     median = float(np.median(prices)) if n_obs else float("nan")
 
@@ -68,6 +76,8 @@ def _assess_column(col: FloatArray, cfg: QualityConfig) -> dict[str, Any]:
         zero_share = float(np.mean(step == 0.0))
 
     reasons: list[str] = []
+    if n_obs < cfg.min_history_days:
+        reasons.append(f"only {n_obs} trading days of history (needs {cfg.min_history_days})")
     if coverage < cfg.min_coverage:
         reasons.append(f"coverage {coverage:.0%} is below {cfg.min_coverage:.0%}")
     if gap > cfg.max_gap_days:
@@ -106,9 +116,9 @@ def assess_quality(
     calendar are ignored. Columns of the result: coverage, n_obs, longest_gap,
     median_price, extreme_moves, zero_return_share, passed, reasons.
 
-    Coverage is measured over the whole calendar, so recent listings with a short
-    history fail it. Unchanged prices catch the stale closes that thinly traded stocks
-    produce on a partial feed.
+    Coverage and gaps are measured from each stock's first trade, so a recent listing is
+    judged on its own history; it needs `min_history_days` of it. Unchanged prices catch
+    the stale closes that thinly traded stocks produce on a partial feed.
     """
     cfg = config or QualityConfig()
     if len(calendar) == 0:

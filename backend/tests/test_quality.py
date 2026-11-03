@@ -59,13 +59,30 @@ def test_a_clean_stock_passes() -> None:
     assert as_float(report.loc["GOOD", "coverage"]) == pytest.approx(1.0)
 
 
-def test_a_short_history_fails_coverage() -> None:
+def test_a_short_history_fails_on_length_not_coverage() -> None:
     report = assess_quality(make_closes(), calendar())
 
     assert bool(report.loc["IPO", "passed"]) is False
-    assert as_float(report.loc["IPO", "coverage"]) == pytest.approx(0.25)
-    assert as_int(report.loc["IPO", "longest_gap"]) == 300
-    assert "coverage" in reasons(report, "IPO")
+    assert as_float(report.loc["IPO", "coverage"]) == pytest.approx(1.0)  # counted from listing
+    assert as_int(report.loc["IPO", "longest_gap"]) == 0
+    assert "days of history" in reasons(report, "IPO")
+    assert "coverage" not in reasons(report, "IPO")
+
+
+def test_a_recent_listing_with_enough_history_passes() -> None:
+    report = assess_quality(make_closes(), calendar(), QualityConfig(min_history_days=100))
+
+    assert bool(report.loc["IPO", "passed"]) is True
+
+
+def test_a_stock_that_stops_trading_still_fails() -> None:
+    closes = make_closes()
+    closes.loc[closes.index[-50:], "GOOD"] = np.nan  # delisted 50 days ago
+
+    report = assess_quality(closes, calendar())
+
+    assert bool(report.loc["GOOD", "passed"]) is False
+    assert as_int(report.loc["GOOD", "longest_gap"]) == 50
 
 
 def test_a_long_gap_fails_even_when_coverage_is_fine() -> None:
