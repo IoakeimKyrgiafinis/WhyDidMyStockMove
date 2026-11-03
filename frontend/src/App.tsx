@@ -37,6 +37,11 @@ export default function App() {
             go({ ticker: null, day: null });
           }}
         >
+          <svg className="brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+            <rect x="7" y="17" width="4" height="8" rx="1" fill="var(--c-market)" />
+            <rect x="14" y="12" width="4" height="13" rx="1" fill="var(--c-sector)" />
+            <rect x="21" y="6" width="4" height="19" rx="1" fill="var(--c-own)" />
+          </svg>
           Why did my stock move?
         </a>
         {route.ticker && <Search onSelect={(t) => go({ ticker: t, day: null })} />}

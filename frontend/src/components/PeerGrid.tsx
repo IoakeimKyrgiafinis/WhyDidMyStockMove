@@ -1,26 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
-/** Diverging colour for a value in [-scale, scale]: blue for negative, red for positive. */
-function cellColor(v: number | null, scale: number, dark: boolean): string {
-  if (v === null) return dark ? "#20252f" : "#eef0f4";
+/** Diverging colour for a value in [-scale, scale]: blue for negative, orange for positive. */
+function cellColor(v: number | null, scale: number): string {
+  if (v === null) return "#1b1d21";
   const t = Math.max(-1, Math.min(1, v / scale));
-  const base = dark ? [23, 27, 35] : [246, 247, 249];
-  const target = t >= 0 ? [214, 69, 65] : [59, 111, 214];
+  const base = [17, 18, 21];
+  const target = t >= 0 ? [255, 122, 26] : [79, 141, 255];
   const a = Math.abs(t) ** 0.8;
   const mix = base.map((b, i) => Math.round(b + (target[i] - b) * a));
   return `rgb(${mix[0]},${mix[1]},${mix[2]})`;
-}
-
-function useDark(): boolean {
-  const query = "(prefers-color-scheme: dark)";
-  const [dark, setDark] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const mq = window.matchMedia(query);
-    const on = () => setDark(mq.matches);
-    mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
-  }, []);
-  return dark;
 }
 
 interface Props {
@@ -35,7 +23,6 @@ interface Props {
 /** A correlation matrix drawn on a canvas: thousands of cells are too many for SVG. */
 export function GridCanvas({ names, matrix, scale, highlight, onHover, size = 520 }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const dark = useDark();
   const n = names.length;
 
   useEffect(() => {
@@ -51,18 +38,18 @@ export function GridCanvas({ names, matrix, scale, highlight, onHover, size = 52
     const cell = size / n;
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < n; j++) {
-        ctx.fillStyle = cellColor(i === j ? null : matrix[i][j], scale, dark);
+        ctx.fillStyle = cellColor(i === j ? null : matrix[i][j], scale);
         ctx.fillRect(j * cell, i * cell, Math.ceil(cell), Math.ceil(cell));
       }
     }
     const t = names.indexOf(highlight);
     if (t >= 0) {
-      ctx.strokeStyle = dark ? "#eef1f6" : "#14171f";
+      ctx.strokeStyle = "#f4f4f2";
       ctx.lineWidth = 1;
       ctx.strokeRect(0.5, t * cell + 0.5, size - 1, cell - 1);
       ctx.strokeRect(t * cell + 0.5, 0.5, cell - 1, size - 1);
     }
-  }, [names, matrix, scale, highlight, size, dark, n]);
+  }, [names, matrix, scale, highlight, size, n]);
 
   const locate = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
@@ -85,8 +72,7 @@ export function GridCanvas({ names, matrix, scale, highlight, onHover, size = 52
 }
 
 export function ColorScale({ scale, label }: { scale: number; label: string }) {
-  const dark = useDark();
-  const stops = [-1, -0.5, 0, 0.5, 1].map((t) => cellColor(t * scale, scale, dark));
+  const stops = [-1, -0.5, 0, 0.5, 1].map((t) => cellColor(t * scale, scale));
   return (
     <div className="colorscale">
       <span className="num small">{(-scale).toFixed(2)}</span>
