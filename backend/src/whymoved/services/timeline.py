@@ -211,7 +211,10 @@ def _rows_by_symbol(symbols: pd.Series) -> dict[str, np.ndarray]:
     Python string is created per headline."""
     if len(symbols) == 0:
         return {}
-    lists = pc.split_pattern(pa.array(symbols, type=pa.string()), ",")
+    values = pa.array(symbols, type=pa.string())
+    if isinstance(values, pa.ChunkedArray):  # a real parquet file loads in several chunks
+        values = values.combine_chunks()
+    lists = pc.split_pattern(values, ",")
     tickers = pc.list_flatten(lists).dictionary_encode()
     parents = np.asarray(pc.list_parent_indices(lists), dtype=np.int64)
     codes = np.asarray(tickers.indices, dtype=np.int64)

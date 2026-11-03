@@ -178,3 +178,17 @@ def test_a_broken_optional_file_does_not_stop_loading(tmp_path: Path, market) ->
     assert routine == 1
     assert len(snapshot.trades) == len(market.snapshot.trades) - routine  # awards left out
     assert str(snapshot.trades["kind"].dtype) == "category"
+
+
+def test_ticker_index_handles_chunked_arrow_strings() -> None:
+    import pyarrow as pa
+
+    from whymoved.services.timeline import _rows_by_symbol
+
+    chunked = pa.chunked_array([["AAA,BBB", "CCC"], ["BBB", ""]])
+    symbols = pd.Series(pd.arrays.ArrowExtensionArray(chunked))
+
+    rows = _rows_by_symbol(symbols)
+
+    assert {k: list(v) for k, v in rows.items()} == {"AAA": [0], "BBB": [0, 2], "CCC": [1]}
+    assert _rows_by_symbol(pd.Series([], dtype=object)) == {}
