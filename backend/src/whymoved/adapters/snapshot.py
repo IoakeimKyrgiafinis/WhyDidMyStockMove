@@ -218,12 +218,13 @@ def download_snapshot(
     transport: httpx.BaseTransport | None = None,
     retry: RetryPolicy | None = None,
     sleep: Callable[[float], None] = time.sleep,
-) -> None:
+) -> bool:
     """Download the snapshot files from `base_url` (a GitHub release download URL).
 
     Every file is downloaded to a temporary name first, and only when all have arrived are
     they renamed into place, so a failed download never leaves a mixed snapshot behind.
-    Optional files that are not published are skipped, keeping any older copy.
+    Optional files that are not published are skipped, keeping any older copy. Returns
+    whether any file differs from the copy already on disk.
     """
     policy = retry or RetryPolicy(max_attempts=4, base_delay=2.0)
     base = base_url if base_url.endswith("/") else base_url + "/"
@@ -239,11 +240,15 @@ def download_snapshot(
                         logger.info("%s is not published; skipping it", name)
                         continue
                     raise
+                current = directory / name
+                if current.exists() and current.read_bytes() == content:
+                    continue  # unchanged since the last download
                 temp = directory / f".{name}.download"
                 temps[name] = temp
                 temp.write_bytes(content)
         for name, temp in temps.items():
             os.replace(temp, directory / name)
+        return bool(temps)
     finally:
         for temp in temps.values():
             temp.unlink(missing_ok=True)

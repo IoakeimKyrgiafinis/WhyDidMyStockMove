@@ -121,3 +121,33 @@ def test_a_missing_snapshot_is_reported_not_fatal(tmp_path: Path) -> None:
 
     assert state.status()[0] == "unavailable"
     assert "no price files" in (state.status()[1] or "")
+
+
+def test_refresh_reloads_only_changed_data_and_frees_the_old_copy_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from whymoved.api import state as state_module
+
+    write_snapshot(tmp_path, make_market())
+    data = DataState()
+    data.refresh(tmp_path, "")
+    first = data.explainer
+
+    changes = iter([False, True])
+    monkeypatch.setattr(state_module, "download_snapshot", lambda *_a, **_k: next(changes))
+    data.refresh(tmp_path, "https://example.test/")
+    assert data.explainer is first  # unchanged: not reloaded
+
+    seen_during_load: list[str] = []
+    from whymoved.adapters.snapshot import load_snapshot as real_load
+
+    def spying_load(path: Path):  # type: ignore[no-untyped-def]
+        seen_during_load.append(data.status()[0])
+        return real_load(path)
+
+    monkeypatch.setattr(state_module, "load_snapshot", spying_load)
+    data.refresh(tmp_path, "https://example.test/")
+
+    assert seen_during_load == ["loading"]  # the old copy was released before loading
+    assert data.explainer is not first
+    assert data.status()[0] == "ready"

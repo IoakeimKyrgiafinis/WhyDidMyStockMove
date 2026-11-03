@@ -120,3 +120,17 @@ def test_client_errors_are_not_retried(tmp_path: Path) -> None:
         )
 
     assert sleeps == []
+
+
+def test_a_second_download_of_the_same_files_reports_no_change(tmp_path: Path) -> None:
+    source, target = tmp_path / "release", tmp_path / "data"
+    source.mkdir()
+    write_snapshot(source, make_market())
+    transport = _serve(source)
+
+    first = download_snapshot(BASE, target, transport=transport, sleep=lambda _: None)
+    again = download_snapshot(BASE, target, transport=transport, sleep=lambda _: None)
+    write_snapshot(source, make_market(seed=5))  # the nightly job publishes new data
+    changed = download_snapshot(BASE, target, transport=transport, sleep=lambda _: None)
+
+    assert (first, again, changed) == (True, False, True)

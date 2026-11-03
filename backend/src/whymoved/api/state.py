@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import logging
 import threading
 from datetime import UTC, datetime
@@ -46,10 +47,31 @@ class DataState:
             return "unavailable", self._error
 
     def refresh(self, data_dir: Path, snapshot_url: str) -> None:
-        """Download (if a URL is set) and load the snapshot. Keeps the old data on failure."""
+        """Download (if a URL is set) and load the snapshot.
+
+        An unchanged snapshot is not reloaded. A changed one replaces the old data, which is
+        released FIRST: two copies of the snapshot do not fit in a 512 MB host, so for the few
+        seconds of a reload the API answers "loading" (the site retries on its own). A failed
+        download keeps the old data.
+        """
         try:
-            if snapshot_url:
-                download_snapshot(snapshot_url, data_dir)
+            changed = download_snapshot(snapshot_url, data_dir) if snapshot_url else True
+        except SnapshotError as exc:
+            logger.error("downloading the snapshot failed: %s", exc)
+            with self._lock:
+                if self._explainer is None:
+                    self._error = str(exc)
+                    self._loading = False
+            return
+        with self._lock:
+            loaded = self._explainer is not None
+            if loaded and not changed:
+                logger.info("snapshot unchanged; nothing to reload")
+                return
+            self._explainer = None
+            self._loading = True
+        gc.collect()
+        try:
             explainer = MoveExplainer(load_snapshot(data_dir))
         except (SnapshotError, ValueError) as exc:
             logger.error("loading the snapshot failed: %s", exc)
