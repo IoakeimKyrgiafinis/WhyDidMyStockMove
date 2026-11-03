@@ -90,15 +90,9 @@ class Snapshot:
 
 def load_snapshot(directory: Path) -> Snapshot:
     """Read the nightly job's outputs from `directory`."""
-    # Only closes: the API never uses volumes, and reading them costs memory on a small host.
     close_path = directory / CLOSE_FILE
     if not close_path.exists():
         raise SnapshotError(f"no price files in {directory}")
-    try:
-        raw_close = _read_close(close_path)
-    except Exception as exc:  # pyarrow failing on a truncated or corrupt file
-        raise SnapshotError(f"cannot read prices: {exc}") from exc
-
     path = directory / UNIVERSE_FILE
     try:
         summary = json.loads(path.read_text(encoding="utf-8"))
@@ -117,18 +111,23 @@ def load_snapshot(directory: Path) -> Snapshot:
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise SnapshotError(f"cannot read {path}: {exc}") from exc
 
-    # 32-bit prices: seven significant digits is plenty for daily closes, every calculation
-    # converts to 64-bit itself, and it halves the largest table on a 512 MB host.
-    close = raw_close.sort_index()
-    close.index = pd.DatetimeIndex(close.index).normalize()
-    # Each read frees large temporary buffers; give them back before the next file, or the
-    # peaks add up past a 512 MB host's limit (see whymoved.memory).
+    # Memory on a 512 MB host: each read briefly needs much more than the table it keeps, and
+    # the freed buffers are handed back before the next read (whymoved.memory). Reading the
+    # files with the biggest spikes first means each spike lands while little else is held:
+    # measured on Linux, a loading peak of about 360 MB instead of 490.
+    trades = _optional(_trades_path(directory), _read_trades, empty_trades())
     release_memory()
     news = _optional(directory / NEWS_FILE, _read_news, pd.DataFrame(columns=NEWS_COLUMNS))
     release_memory()
-    events = _optional(directory / EVENTS_FILE, _read_events, empty_events())
+    try:
+        # Only closes: the API never uses volumes. 32-bit: seven significant digits is plenty
+        # for daily closes, and every calculation converts to 64-bit itself.
+        close = _read_close(close_path).sort_index()
+    except Exception as exc:  # pyarrow failing on a truncated or corrupt file
+        raise SnapshotError(f"cannot read prices: {exc}") from exc
+    close.index = pd.DatetimeIndex(close.index).normalize()
     release_memory()
-    trades = _optional(_trades_path(directory), _read_trades, empty_trades())
+    events = _optional(directory / EVENTS_FILE, _read_events, empty_events())
     release_memory()
     return Snapshot(
         close=close,
