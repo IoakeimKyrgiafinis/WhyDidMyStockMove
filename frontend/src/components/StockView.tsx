@@ -8,6 +8,7 @@ import { HealthCard } from "./HealthCard";
 import { EarningsCard, InsiderPanel } from "./InsiderPanel";
 import { PeerPanel } from "./PeerPanel";
 import { Info } from "./Info";
+import { NewsView } from "./NewsView";
 import { presetRange, type Range } from "../range";
 import { RangePicker } from "./RangePicker";
 
@@ -72,7 +73,15 @@ function Loaded({
   onTicker: Props["onTicker"];
 }) {
   const [chosen, setRange] = useState<Range>(() => presetRange(daily.dates, "1Y"));
+  const [view, setView] = useState<"overview" | "news">("overview");
   const selected = day ? daily.dates.indexOf(day) : -1;
+  const newsDay = day && selected >= 0 ? day : null;
+  const latest = daily.dates[daily.dates.length - 1];
+  const show = (next: "overview" | "news") => {
+    if (next === "news" && !newsDay) onDay(latest); // nothing picked yet: show the latest session
+    setView(next);
+    window.scrollTo({ top: 0 });
+  };
   // A shared link may point at a day outside the chosen range: widen the range to show it.
   const range: Range =
     selected >= 0 && (selected < chosen[0] || selected > chosen[1])
@@ -112,65 +121,90 @@ function Loaded({
 
       <RangePicker dates={daily.dates} range={range} onChange={setRange} />
 
-      <div className="grid">
-        <div className="grid__main">
-          <Attribution daily={daily} range={range} />
-          <section className="card">
-            <header className="card__head">
-              <h2>Cumulative return and its sources</h2>
-              <Legend />
-            </header>
-            <CumulativeChart daily={daily} range={range} />
-          </section>
-          <section className="card">
-            <header className="card__head">
-              <h2>Day by day</h2>
-              <Info label="daily chart">
-                <p>
-                  Each bar is one trading day, split into what the market explains, what the sector explains, and the
-                  stock's own part. Dots below the axis mark days whose own move was unusual for this stock; the lane
-                  under them shows earnings filings, insider trades, other 8-Ks and headlines. Click any day to see it
-                  explained in detail, with everything that came out in time for it.
-                </p>
-              </Info>
-            </header>
-            <DailyChart
-              daily={daily}
-              range={range}
-              selected={selected >= 0 ? selected : null}
-              onSelect={(i) => onDay(daily.dates[i])}
-              markers={markerMap}
-            />
-            <MarkerLegend />
-            <LatestFlags daily={daily} range={range} onDay={onDay} />
-          </section>
-          {insiders.state === "ready" && <EarningsCard data={insiders.data} />}
-          {insiders.state === "ready" && <InsiderPanel data={insiders.data} />}
-          <PeerPanel ticker={s.ticker} day={day && selected >= 0 ? day : null} onTicker={onTicker} />
-          {insiders.state === "error" && (
-            <section className="card">
-              <p className="error">Insider data could not be loaded: {insiders.error.message}</p>
-            </section>
-          )}
-        </div>
-        <aside className="grid__side">
-          {day && selected >= 0 ? (
-            <DayPanel ticker={s.ticker} date={day} onClose={() => onDay(null)} />
-          ) : (
-            <section className="card card--hint">
-              <h2>Pick a day</h2>
-              <p className="muted">
-                Click a bar in the day-by-day chart, or one of the unusual days listed under it, to see how much of
-                that day's move the market and sector explain.
-              </p>
-              <button type="button" className="button" onClick={() => onDay(daily.dates[daily.dates.length - 1])}>
-                Explain the latest day
-              </button>
-            </section>
-          )}
-          <HealthCard profile={profile} />
-        </aside>
+      <div className="viewswitch" role="tablist" aria-label="Page view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "overview"}
+          className={view === "overview" ? "is-active" : ""}
+          onClick={() => show("overview")}
+        >
+          Overview
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "news"}
+          className={view === "news" ? "is-active" : ""}
+          onClick={() => show("news")}
+        >
+          News and filings · {fmtDate(newsDay ?? latest)}
+        </button>
       </div>
+
+      {view === "news" ? (
+        <NewsView ticker={s.ticker} date={newsDay ?? latest} onBack={() => show("overview")} />
+      ) : (
+        <div className="grid">
+          <div className="grid__main">
+            <Attribution daily={daily} range={range} />
+            <section className="card">
+              <header className="card__head">
+                <h2>Cumulative return and its sources</h2>
+                <Legend />
+              </header>
+              <CumulativeChart daily={daily} range={range} />
+            </section>
+            <section className="card">
+              <header className="card__head">
+                <h2>Day by day</h2>
+                <Info label="daily chart">
+                  <p>
+                    Each bar is one trading day, split into what the market explains, what the sector explains, and the
+                    stock's own part. Dots below the axis mark days whose own move was unusual for this stock; the lane
+                    under them shows earnings filings, insider trades, other 8-Ks and headlines. Click any day to see it
+                    explained in detail, with everything that came out in time for it.
+                  </p>
+                </Info>
+              </header>
+              <DailyChart
+                daily={daily}
+                range={range}
+                selected={selected >= 0 ? selected : null}
+                onSelect={(i) => onDay(daily.dates[i])}
+                markers={markerMap}
+              />
+              <MarkerLegend />
+              <LatestFlags daily={daily} range={range} onDay={onDay} />
+            </section>
+            {insiders.state === "ready" && <EarningsCard data={insiders.data} />}
+            {insiders.state === "ready" && <InsiderPanel data={insiders.data} />}
+            <PeerPanel ticker={s.ticker} day={day && selected >= 0 ? day : null} onTicker={onTicker} />
+            {insiders.state === "error" && (
+              <section className="card">
+                <p className="error">Insider data could not be loaded: {insiders.error.message}</p>
+              </section>
+            )}
+          </div>
+          <aside className="grid__side">
+            {day && selected >= 0 ? (
+              <DayPanel ticker={s.ticker} date={day} onClose={() => onDay(null)} onNews={() => show("news")} />
+            ) : (
+              <section className="card card--hint">
+                <h2>Pick a day</h2>
+                <p className="muted">
+                  Click a bar in the day-by-day chart, or one of the unusual days listed under it, to see how much of
+                  that day's move the market and sector explain.
+                </p>
+                <button type="button" className="button" onClick={() => onDay(daily.dates[daily.dates.length - 1])}>
+                  Explain the latest day
+                </button>
+              </section>
+            )}
+            <HealthCard profile={profile} />
+          </aside>
+        </div>
+      )}
     </div>
   );
 }

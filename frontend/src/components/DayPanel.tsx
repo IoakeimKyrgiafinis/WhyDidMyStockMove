@@ -1,12 +1,18 @@
 import { useEffect, useRef } from "react";
 import { api, type DayDetail } from "../api";
-import { fmtDate, money, num, pct, pValue, rarity, titleCase, useAsync } from "../lib";
-import { HeadlineReactions } from "./HeadlineReactions";
+import { fmtDate, num, pct, pValue, rarity, useAsync } from "../lib";
 import { Info } from "./Info";
 
 const Z95 = 1.96;
 
-export function DayPanel({ ticker, date, onClose }: { ticker: string; date: string; onClose: () => void }) {
+interface Props {
+  ticker: string;
+  date: string;
+  onClose: () => void;
+  onNews: () => void;
+}
+
+export function DayPanel({ ticker, date, onClose, onNews }: Props) {
   const result = useAsync(`${ticker}/${date}`, (signal) => api.day(ticker, date, signal));
   const panel = useRef<HTMLElement>(null);
 
@@ -27,12 +33,12 @@ export function DayPanel({ ticker, date, onClose }: { ticker: string; date: stri
       </header>
       {result.state === "loading" && <p className="muted">Explaining the day...</p>}
       {result.state === "error" && <p className="error">{result.error.message}</p>}
-      {result.state === "ready" && <DayBody day={result.data} />}
+      {result.state === "ready" && <DayBody day={result.data} onNews={onNews} />}
     </section>
   );
 }
 
-function DayBody({ day }: { day: DayDetail }) {
+function DayBody({ day, onNews }: { day: DayDetail; onNews: () => void }) {
   const explained = day.market + day.sector + day.drift;
   const parts = [
     { key: "market", label: "Market", value: day.market, se: day.se_market },
@@ -119,53 +125,36 @@ function DayBody({ day }: { day: DayDetail }) {
           </>
         )}
       </div>
-      <DayItems day={day} />
-      <p className="muted small">
-        Unexplained is not the same as news: fund flows, style effects and plain noise land there too. A coinciding
-        headline shows timing, not cause.
-      </p>
+      <NewsButton day={day} onNews={onNews} />
     </>
   );
 }
 
-/** Headlines, 8-K filings and insider filings that became public in time for this session. */
-function DayItems({ day }: { day: DayDetail }) {
+/** A count of the day's items, and the way into the news view where they are laid out in full. */
+function NewsButton({ day, onNews }: { day: DayDetail; onNews: () => void }) {
   const { headlines, filings, insiders } = day.items;
-  const empty = headlines.length + filings.length + insiders.length === 0;
+  const counts = [
+    [headlines.length, "headline"],
+    [filings.length, "filing"],
+    [insiders.length, "insider trade"],
+  ] as const;
+  const total = headlines.length + filings.length + insiders.length;
   return (
     <div className="dayitems">
-      <header className="card__head">
-        <h3>What else happened</h3>
-        <Info label="timing">
-          <p>
-            Items are placed on the first session that could react to them. A headline or filing after the 4pm New
-            York close counts toward the next day. Insider filings count from the day after they were filed, since
-            the bulk data has no filing time.
-          </p>
-        </Info>
-      </header>
-      {empty && <p className="muted small">No headlines, company filings or insider trades for this day.</p>}
-      {filings.map((f) => (
-        <a key={f.accession} className="item item--filing" href={f.url} target="_blank" rel="noreferrer">
-          <span className="item__kind">{f.earnings ? "Earnings 8-K" : "8-K"}</span>
-          <span className="item__text">{f.labels.filter((l) => !l.startsWith("Financial statements")).join("; ") || "Company filing"}</span>
-          {f.accepted_at && (
-            <span className="item__meta">
-              filed {fmtDate(f.accepted_at.slice(0, 10))} {f.accepted_at.slice(11, 16)}
-            </span>
-          )}
-        </a>
-      ))}
-      {insiders.map((i) => (
-        <a key={i.accession} className={`item item--${i.signal}`} href={i.url} target="_blank" rel="noreferrer">
-          <span className="item__kind">{i.signal_label}</span>
-          <span className="item__text">
-            {titleCase(i.owner_name)} ({i.owner_role}){i.value !== null ? `, ${money(i.value)}` : ""}
-          </span>
-          <span className="item__meta">filed {fmtDate(i.filing_date)}</span>
-        </a>
-      ))}
-      <HeadlineReactions ticker={day.ticker} date={day.date} headlines={headlines} />
+      <button type="button" className="newsbutton" onClick={onNews}>
+        <span className="newsbutton__label">What else happened</span>
+        <span className="newsbutton__counts">
+          {total === 0
+            ? "No news, filings or insider trades"
+            : counts
+                .filter(([n]) => n > 0)
+                .map(([n, word]) => `${n} ${word}${n === 1 ? "" : "s"}`)
+                .join(" · ")}
+        </span>
+        <span className="newsbutton__arrow" aria-hidden="true">
+          →
+        </span>
+      </button>
     </div>
   );
 }
