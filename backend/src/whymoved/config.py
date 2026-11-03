@@ -33,7 +33,18 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        """Allowed origins, normalised the way browsers send them: no trailing slash, lower
+        case, and https:// assumed when the scheme is left out. Pasting a URL copied from the
+        address bar ("https://site.vercel.app/") then still works."""
+        origins: list[str] = []
+        for raw in self.cors_origins.split(","):
+            origin = raw.strip().rstrip("/").lower()
+            if not origin:
+                continue
+            if "://" not in origin:
+                origin = f"https://{origin}"
+            origins.append(origin)
+        return origins
 
 
 class JobSettings(BaseSettings):

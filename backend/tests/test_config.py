@@ -76,3 +76,15 @@ def test_job_settings_reject_an_unknown_feed() -> None:
             alpaca_feed="nasdaq",
             _env_file=None,
         )
+
+
+def test_cors_origins_are_normalised_like_browser_origins() -> None:
+    settings = Settings(
+        cors_origins="https://Site.vercel.app/, plain.example.com ,http://localhost:5173"
+    )
+
+    assert settings.cors_origin_list == [
+        "https://site.vercel.app",
+        "https://plain.example.com",
+        "http://localhost:5173",
+    ]
