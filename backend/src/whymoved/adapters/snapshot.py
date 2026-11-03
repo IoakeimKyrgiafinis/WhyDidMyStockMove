@@ -6,7 +6,7 @@ import os
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import httpx
@@ -78,7 +78,7 @@ def load_snapshot(directory: Path) -> Snapshot:
     if not close_path.exists():
         raise SnapshotError(f"no price files in {directory}")
     try:
-        raw_close = pd.read_parquet(close_path)
+        raw_close = _read_close(close_path)
     except Exception as exc:  # pyarrow failing on a truncated or corrupt file
         raise SnapshotError(f"cannot read prices: {exc}") from exc
 
@@ -102,7 +102,7 @@ def load_snapshot(directory: Path) -> Snapshot:
 
     # 32-bit prices: seven significant digits is plenty for daily closes, every calculation
     # converts to 64-bit itself, and it halves the largest table on a 512 MB host.
-    close = raw_close.sort_index().astype("float32")
+    close = raw_close.sort_index()
     close.index = pd.DatetimeIndex(close.index).normalize()
     return Snapshot(
         close=close,
@@ -134,12 +134,33 @@ def _read_news(path: Path) -> pd.DataFrame:
     hold as Python strings, and more than a 512 MB host can spare. The snapshot keeps all of
     it; the API serves the recent part.
     """
-    frame = pd.read_parquet(path, columns=NEWS_COLUMNS, dtype_backend="pyarrow")
+    # Find the newest timestamp from the small timestamp column first, then let the reader
+    # skip older rows, so two years of headline text is never held at once.
+    created = pq.read_table(path, columns=["created_at"]).column("created_at")
+    if len(created) == 0:
+        return pd.DataFrame(columns=NEWS_COLUMNS)
+    newest = pc.max(created).as_py()
+    cutoff = pa.scalar(newest - timedelta(days=NEWS_DAYS), type=created.type)
+    table = pq.read_table(path, columns=NEWS_COLUMNS, filters=[("created_at", ">=", cutoff)])
+    frame: pd.DataFrame = table.to_pandas(types_mapper=pd.ArrowDtype)
     frame["created_at"] = pd.to_datetime(frame["created_at"].astype("datetime64[ns]"))
-    if len(frame):
-        cutoff = frame["created_at"].max() - pd.Timedelta(days=NEWS_DAYS)
-        frame = frame[frame["created_at"] >= cutoff]
     return frame.sort_values("created_at", kind="mergesort").reset_index(drop=True)
+
+
+def _read_close(path: Path) -> pd.DataFrame:
+    """Daily closes as 32-bit floats, converted inside Arrow so a 64-bit copy of the whole
+    table never exists in pandas. Seven significant digits is plenty for daily closes, and
+    every calculation converts to 64-bit itself."""
+    table = pq.read_table(path)
+    schema = pa.schema(
+        [
+            field.with_type(pa.float32()) if pa.types.is_floating(field.type) else field
+            for field in table.schema
+        ],
+        metadata=table.schema.metadata,
+    )
+    frame: pd.DataFrame = table.cast(schema).to_pandas()
+    return frame
 
 
 def _read_events(path: Path) -> pd.DataFrame:
