@@ -81,6 +81,12 @@ jobs:
         continue-on-error: true
         run: python -m whymoved.jobs.collect_macro
 
+      - name: World press
+        id: world
+        continue-on-error: true
+        # Reads GDELT's 15-minute files since the last run; the first run fills in 30 days.
+        run: python -m whymoved.jobs.collect_world_news --backfill-days 30 --max-minutes 45
+
       - name: Pooled insider study
         id: study
         if: steps.insider.outcome == 'success' || steps.filings.outcome == 'success'
@@ -95,7 +101,7 @@ jobs:
           gh release upload data-latest data/* --clobber
 
       - name: Fail the run if a collector failed
-        if: steps.news.outcome == 'failure' || steps.insider.outcome == 'failure' || steps.filings.outcome == 'failure' || steps.press.outcome == 'failure' || steps.macro.outcome == 'failure' || steps.study.outcome == 'failure'
+        if: steps.news.outcome == 'failure' || steps.insider.outcome == 'failure' || steps.filings.outcome == 'failure' || steps.press.outcome == 'failure' || steps.macro.outcome == 'failure' || steps.world.outcome == 'failure' || steps.study.outcome == 'failure'
         run: |
           echo "A collector failed. The snapshot was still published with the data that succeeded."
           exit 1

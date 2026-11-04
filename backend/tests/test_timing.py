@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from whymoved.domain.timing import session_for_eastern, session_for_filing, session_for_utc
+from whymoved.domain.timing import (
+    session_for_eastern,
+    session_for_filing,
+    session_for_utc,
+    sessions_for_utc,
+)
 
 
 def test_before_the_close_is_the_same_session() -> None:
@@ -39,3 +44,15 @@ def test_filings_use_the_acceptance_time_in_utc() -> None:
 
 def test_filings_without_an_acceptance_time_count_from_the_next_day() -> None:
     assert session_for_filing(date(2026, 8, 3), None) == date(2026, 8, 4)
+
+
+def test_sessions_for_a_column_match_one_at_a_time() -> None:
+    import pandas as pd
+
+    moments = pd.Series(
+        pd.to_datetime(
+            ["2026-07-01 19:59", "2026-07-01 20:30", "2026-01-15 20:30", "2026-01-16 02:00"]
+        )
+    )
+    expected = [pd.Timestamp(session_for_utc(m.to_pydatetime())) for m in moments]
+    assert sessions_for_utc(moments).tolist() == expected

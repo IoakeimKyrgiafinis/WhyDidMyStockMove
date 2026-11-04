@@ -1,4 +1,4 @@
-import { api, type DayDetail, type Filing, type MacroRelease } from "../api";
+import { api, type DayDetail, type Filing, type MacroRelease, type WorldNews } from "../api";
 import { fmtDate, fmtNewYork, money, num, pct, titleCase, useAsync } from "../lib";
 import { HeadlineReactions } from "./HeadlineReactions";
 import { Info } from "./Info";
@@ -33,7 +33,7 @@ export function NewsView({ ticker, date, onBack }: { ticker: string; date: strin
 }
 
 function NewsBody({ day }: { day: DayDetail }) {
-  const { headlines, filings, insiders, macro } = day.items;
+  const { headlines, filings, insiders, macro, world } = day.items;
   const announcements = filings.filter((f) => f.category === "current");
   const others = filings.filter((f) => f.category !== "current");
   return (
@@ -93,6 +93,7 @@ function NewsBody({ day }: { day: DayDetail }) {
               </div>
             )}
           </section>
+          {(world.covered || world.since) && <WorldPress world={world} />}
         </div>
 
         <div className="newsview__side">
@@ -200,7 +201,7 @@ function FiledAt({ filing: f }: { filing: Filing }) {
 function macroValue(r: MacroRelease, v: number): string {
   const sign = r.signed && v > 0 ? "+" : "";
   const text = `${sign}${v.toFixed(r.decimals)}`;
-  return r.unit === "%" || r.unit === "k" || r.unit === "M" ? `${text}${r.unit}` : `${text} ${r.unit}`;
+  return /^[%kM]/.test(r.unit) ? `${text}${r.unit}` : `${text} ${r.unit}`;
 }
 
 function fedRange(upper: number): string {
@@ -248,6 +249,60 @@ function Economy({ releases, market }: { releases: MacroRelease[]; market: numbe
           </a>
         ))}
       </div>
+    </section>
+  );
+}
+
+/** "about 4× a usual day", "a usual amount", "less than usual". */
+function coverageNote(n: number, typical: number | null): string {
+  if (typical === null) return "";
+  if (typical === 0) return n > 0 ? " · a usual day has none" : "";
+  const ratio = n / typical;
+  if (ratio >= 1.5) return ` · about ${ratio >= 10 ? Math.round(ratio) : ratio.toFixed(1)}× a usual day (${num(typical, 0)})`;
+  if (ratio <= 0.67) return ` · less than a usual day (${num(typical, 0)})`;
+  return ` · about a usual day (${num(typical, 0)})`;
+}
+
+/** Coverage in news sites worldwide (GDELT), with the most widely carried stories. */
+function WorldPress({ world }: { world: WorldNews }) {
+  return (
+    <section className="card">
+      <header className="card__head">
+        <h2>World press{world.covered ? ` · ${world.n_articles} article${world.n_articles === 1 ? "" : "s"}` : ""}</h2>
+        <Info label="world press">
+          <p>
+            Articles from news sites worldwide that name the company in the headline, found by the GDELT Project.
+            Copies of one story are shown once with the number of outlets that ran it; business stories come first.
+            Coverage is noisy and is not used in any statistic.
+          </p>
+        </Info>
+      </header>
+      {!world.covered ? (
+        <p className="muted small">World press coverage starts on {world.since ? fmtDate(world.since) : "a later day"}.</p>
+      ) : (
+        <>
+          {(world.n_articles === 0 || world.typical !== null) && (
+            <p className="muted small">
+              {world.n_articles === 0 ? "No articles that day" : `${world.n_articles} articles`}
+              {coverageNote(world.n_articles, world.typical)}
+            </p>
+          )}
+          {world.stories.length > 0 && (
+            <div className="newsview__list">
+              {world.stories.map((s) => (
+                <a key={s.url} className="story" href={s.url} target="_blank" rel="noreferrer">
+                  <span className="story__title">{s.title}</span>
+                  <span className="story__meta">
+                    {s.domain}
+                    {s.copies > 1 ? ` and ${s.copies - 1} more outlet${s.copies === 2 ? "" : "s"}` : ""} · seen{" "}
+                    {fmtNewYork(s.seen_at)}
+                  </span>
+                </a>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }

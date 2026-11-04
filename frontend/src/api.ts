@@ -169,8 +169,31 @@ export interface MacroRelease {
   url: string;
 }
 
+export interface WorldStory {
+  title: string;
+  url: string;
+  domain: string;
+  copies: number;
+  seen_at: string;
+  business: boolean;
+}
+
+export interface WorldNews {
+  covered: boolean;
+  since: string | null;
+  n_articles: number;
+  typical: number | null;
+  stories: WorldStory[];
+}
+
 export interface DayDetail extends Day {
-  items: { headlines: Headline[]; filings: Filing[]; insiders: InsiderFiling[]; macro: MacroRelease[] };
+  items: {
+    headlines: Headline[];
+    filings: Filing[];
+    insiders: InsiderFiling[];
+    macro: MacroRelease[];
+    world: WorldNews;
+  };
 }
 
 export interface Marker {

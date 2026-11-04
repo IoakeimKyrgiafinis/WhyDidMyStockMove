@@ -22,12 +22,14 @@ from whymoved.api.schemas import (
     ReactionPath,
     StockStudyOut,
     WindowOut,
+    WorldNewsOut,
+    WorldStoryOut,
 )
 from whymoved.domain.insider_summary import SIGNAL_LABELS
 from whymoved.domain.macro import MACRO_SERIES, SERIES_BY_KEY, fred_url, period_label
 from whymoved.domain.reaction import ReactionSize
 from whymoved.services.reactions import HeadlineGroup
-from whymoved.services.timeline import StockInsiderStudy
+from whymoved.services.timeline import StockInsiderStudy, WorldDay
 
 
 def num(value: object) -> float | None:
@@ -251,3 +253,23 @@ def macro(frame: pd.DataFrame) -> list[MacroReleaseOut]:
             )
         )
     return out
+
+
+def world(w: WorldDay) -> WorldNewsOut:
+    return WorldNewsOut(
+        covered=w.covered,
+        since=w.since.date() if w.since is not None else None,
+        n_articles=w.n_articles,
+        typical=w.typical,
+        stories=[
+            WorldStoryOut(
+                title=str(r["title"]),
+                url=str(r["url"]),
+                domain=str(r["domain"]),
+                copies=int(r["copies"]),
+                seen_at=pd.Timestamp(r["seen_at"]).to_pydatetime(),
+                business=bool(r["business"]),
+            )
+            for r in w.stories.to_dict("records")
+        ],
+    )

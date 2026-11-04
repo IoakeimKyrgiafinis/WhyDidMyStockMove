@@ -11,6 +11,8 @@ import pyarrow.compute as pc
 
 from whymoved.adapters.press_store import read_ticker
 from whymoved.adapters.snapshot import Snapshot
+from whymoved.adapters.world_store import coverage_start, read_seen_times
+from whymoved.adapters.world_store import read_ticker as read_world
 from whymoved.domain.corporate_events import form_kind, is_earnings, item_label
 from whymoved.domain.events import (
     MAX_SNAP_DAYS,
@@ -26,7 +28,9 @@ from whymoved.domain.events import (
 from whymoved.domain.insider_summary import summarize_filings
 from whymoved.domain.press import empty_press
 from whymoved.domain.reaction import ReactionSize, reaction_size
-from whymoved.domain.timing import session_for_filing, session_for_utc
+from whymoved.domain.timing import session_for_filing, session_for_utc, sessions_for_utc
+from whymoved.domain.world_news import empty_world
+from whymoved.domain.world_news import stories as world_stories
 
 if TYPE_CHECKING:
     from whymoved.services.explain import MoveExplainer
@@ -48,6 +52,21 @@ class StockInsiderStudy:
     path: AveragePath | None
     tests: tuple[CarResult, ...]
     permutation: PermutationResult | None
+
+
+# Below this many trading days of coverage there is no "usual day" to compare with.
+MIN_COVERAGE_DAYS = 20
+
+
+@dataclass(frozen=True, eq=False)
+class WorldDay:
+    """World press coverage of a stock on one trading day."""
+
+    covered: bool  # the day is inside the stored coverage
+    since: pd.Timestamp | None  # first day of coverage
+    n_articles: int
+    typical: float | None  # median articles on the stock's other trading days
+    stories: pd.DataFrame  # see world_news.stories
 
 
 @dataclass(frozen=True, eq=False)
@@ -84,6 +103,10 @@ class Timeline:
         self._trades = snapshot.trades
         self._press_path = snapshot.press_path
         self._macro = snapshot.macro
+        self._world_path = snapshot.world_path
+        self._world_since = (
+            coverage_start(snapshot.world_path) if snapshot.world_path is not None else None
+        )
         self.pooled: dict[str, object] | None = snapshot.insider_study
 
         # Row positions per ticker. A headline can name several tickers.
@@ -204,6 +227,46 @@ class Timeline:
         frame = self._macro.copy()
         frame["day"] = _snap(frame["release_date"], self._explainer.prices(ticker).index)
         return frame.dropna(subset=["day"])
+
+    def world_counts(self, ticker: str) -> pd.Series:
+        """World press articles per trading day since coverage began (zeros included)."""
+        t = self._explainer.member(ticker).ticker
+        return self._explainer.cached(("world", t), lambda: self._world_counts(t))
+
+    def _world_counts(self, ticker: str) -> pd.Series:
+        if self._world_path is None or self._world_since is None:
+            return pd.Series(dtype="int64")
+        trading = self._explainer.prices(ticker).index
+        days = _snap(sessions_for_utc(read_seen_times(self._world_path, ticker)), trading)
+        counts = days.dropna().value_counts()
+        covered = trading[trading >= self._world_since.normalize()]
+        return counts.reindex(covered, fill_value=0).astype("int64")
+
+    def world_day(self, ticker: str, day: pd.Timestamp) -> WorldDay:
+        t = self._explainer.member(ticker).ticker
+        counts = self.world_counts(t)
+        if self._world_path is None or day not in counts.index:
+            return WorldDay(
+                covered=False,
+                since=self._world_since,
+                n_articles=0,
+                typical=None,
+                stories=world_stories(empty_world()),
+            )
+        # A session collects what came out since the previous close, which after a weekend or
+        # holiday starts several days earlier.
+        start = day - pd.Timedelta(days=7)
+        end = day + pd.Timedelta(days=1)
+        articles = read_world(self._world_path, t, start.to_pydatetime(), end.to_pydatetime())
+        placed = _snap(sessions_for_utc(articles["seen_at"]), self._explainer.prices(t).index)
+        others = counts.drop(day)
+        return WorldDay(
+            covered=True,
+            since=self._world_since,
+            n_articles=int(counts.loc[day]),
+            typical=float(others.median()) if len(others) >= MIN_COVERAGE_DAYS else None,
+            stories=world_stories(articles[placed == day]),
+        )
 
     def day_items(self, ticker: str, day: pd.Timestamp) -> DayItems:
         h = self.headlines(ticker)

@@ -22,6 +22,7 @@ from whymoved.adapters.macro_store import MACRO_FILE
 from whymoved.adapters.news_store import NEWS_FILE
 from whymoved.adapters.parquet_store import CLOSE_FILE
 from whymoved.adapters.press_store import PRESS_FILE
+from whymoved.adapters.world_store import WORLD_FILE
 from whymoved.domain.corporate_events import empty_events, normalize_events
 from whymoved.domain.insider import empty_trades
 from whymoved.domain.macro import empty_macro, normalize_macro
@@ -41,6 +42,7 @@ OPTIONAL_FILES = (
     INSIDER_STUDY_FILE,
     PRESS_FILE,
     MACRO_FILE,
+    WORLD_FILE,
 )
 NEWS_COLUMNS = ["headline", "source", "url", "created_at", "symbols"]
 NEWS_DAYS = 400
@@ -102,6 +104,8 @@ class Snapshot:
     # Press releases stay on disk: the timeline reads one stock's rows at a time.
     press_path: Path | None = None
     macro: pd.DataFrame = field(default_factory=empty_macro)
+    # World press articles also stay on disk, read one stock (or one day) at a time.
+    world_path: Path | None = None
 
 
 def load_snapshot(directory: Path) -> Snapshot:
@@ -109,23 +113,7 @@ def load_snapshot(directory: Path) -> Snapshot:
     close_path = directory / CLOSE_FILE
     if not close_path.exists():
         raise SnapshotError(f"no price files in {directory}")
-    path = directory / UNIVERSE_FILE
-    try:
-        summary = json.loads(path.read_text(encoding="utf-8"))
-        members = [
-            UniverseMember(
-                ticker=str(m["ticker"]),
-                name=str(m["name"]),
-                sector=str(m["sector"]),
-                sector_etf=str(m["sector_etf"]),
-                weight=float(m["weight"]),
-            )
-            for m in summary["members"]
-        ]
-        as_of = date.fromisoformat(str(summary["as_of"]))
-        history_start = date.fromisoformat(str(summary["history_start"]))
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        raise SnapshotError(f"cannot read {path}: {exc}") from exc
+    members, as_of, history_start = read_universe(directory)
 
     # Memory on a 512 MB host: each read briefly needs much more than the table it keeps, and
     # the freed buffers are handed back before the next read (whymoved.memory). Reading the
@@ -155,10 +143,33 @@ def load_snapshot(directory: Path) -> Snapshot:
         trades=trades,
         insider_study=_optional(directory / INSIDER_STUDY_FILE, _read_json, None),
         press_path=directory / PRESS_FILE if (directory / PRESS_FILE).exists() else None,
+        world_path=directory / WORLD_FILE if (directory / WORLD_FILE).exists() else None,
         macro=_optional(
             directory / MACRO_FILE, lambda p: normalize_macro(pd.read_parquet(p)), empty_macro()
         ),
     )
+
+
+def read_universe(directory: Path) -> tuple[list[UniverseMember], date, date]:
+    """The clean universe the nightly job chose: members, as-of date and history start."""
+    path = directory / UNIVERSE_FILE
+    try:
+        summary = json.loads(path.read_text(encoding="utf-8"))
+        members = [
+            UniverseMember(
+                ticker=str(m["ticker"]),
+                name=str(m["name"]),
+                sector=str(m["sector"]),
+                sector_etf=str(m["sector_etf"]),
+                weight=float(m["weight"]),
+            )
+            for m in summary["members"]
+        ]
+        as_of = date.fromisoformat(str(summary["as_of"]))
+        history_start = date.fromisoformat(str(summary["history_start"]))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise SnapshotError(f"cannot read {path}: {exc}") from exc
+    return members, as_of, history_start
 
 
 def _optional[T](path: Path, read: Callable[[Path], T], default: T) -> T:

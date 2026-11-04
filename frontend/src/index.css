@@ -1611,3 +1611,28 @@ line.grid {
   color: var(--muted);
   font-size: 0.78rem;
 }
+
+/* World press stories */
+.story {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.86rem;
+  transition: border-color 120ms;
+}
+.story:hover {
+  border-color: var(--accent-line);
+}
+.story__title {
+  color: var(--ink);
+  line-height: 1.35;
+}
+.story__meta {
+  color: var(--muted);
+  font-size: 0.76rem;
+}

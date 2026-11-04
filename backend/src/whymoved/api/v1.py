@@ -189,6 +189,7 @@ def day(ticker: str, day: date, explainer: Explainer) -> DayDetailResponse:
             filings=convert.filings(items.filings),
             insiders=convert.insider_filings(items.insiders),
             macro=convert.macro(items.macro),
+            world=convert.world(explainer.timeline.world_day(member.ticker, pd.Timestamp(day))),
         ),
     )
 

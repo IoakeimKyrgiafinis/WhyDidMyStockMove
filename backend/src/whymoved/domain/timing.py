@@ -47,3 +47,11 @@ def session_for_filing(filing_date: date, accepted_at: datetime | None) -> date:
     if accepted_at is None or pd.isna(accepted_at):
         return filing_date + timedelta(days=1)
     return session_for_utc(accepted_at)
+
+
+def sessions_for_utc(moments: pd.Series) -> pd.Series:
+    """`session_for_utc` for a whole column of naive UTC timestamps at once."""
+    eastern = pd.DatetimeIndex(moments).tz_localize("UTC").tz_convert(MARKET_TZ)
+    after_close = eastern.hour >= MARKET_CLOSE.hour
+    days = eastern.tz_localize(None).normalize() + pd.to_timedelta(after_close.astype(int), "D")
+    return pd.Series(days, index=moments.index, dtype="datetime64[ns]")

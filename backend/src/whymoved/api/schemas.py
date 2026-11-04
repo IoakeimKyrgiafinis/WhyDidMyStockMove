@@ -206,11 +206,29 @@ class MacroReleaseOut(BaseModel):
     url: str
 
 
+class WorldStoryOut(BaseModel):
+    title: str
+    url: str
+    domain: str
+    copies: int  # outlets that carried it
+    seen_at: datetime  # UTC, without a zone
+    business: bool
+
+
+class WorldNewsOut(BaseModel):
+    covered: bool
+    since: date | None
+    n_articles: int
+    typical: float | None
+    stories: list[WorldStoryOut]
+
+
 class DayItemsOut(BaseModel):
     headlines: list[HeadlineOut]
     filings: list[FilingOut]
     insiders: list[InsiderFilingOut]
     macro: list[MacroReleaseOut]
+    world: WorldNewsOut
 
 
 class DayDetailResponse(DayResponse):
