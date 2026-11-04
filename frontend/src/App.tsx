@@ -126,6 +126,18 @@ function Footer() {
         survivorship bias. Correlations and betas drift over time.
       </p>
       <p>Prices: Alpaca (IEX). Universe: iShares Russell 3000 ETF holdings. US-listed stocks only.</p>
+      <p className="footer__sources">
+        Filings, press releases and insider trades: <a href="https://www.sec.gov/edgar">SEC EDGAR</a>. World press
+        coverage: <a href="https://www.gdeltproject.org/">the GDELT Project</a>. FDA approvals and recalls: data provided
+        by the U.S. Food and Drug Administration (<a href="https://open.fda.gov/">openFDA</a>); not endorsed by the FDA.
+        Clinical trials: <a href="https://clinicaltrials.gov/">ClinicalTrials.gov</a>, U.S. National Library of
+        Medicine.
+      </p>
+      <p className="footer__sources">
+        This product uses the FRED® API but is not endorsed or certified by the Federal Reserve Bank of St. Louis.
+        Economic figures are read through the FRED® API, and by using this site you agree to be bound by the{" "}
+        <a href="https://fred.stlouisfed.org/docs/api/terms_of_use.html">FRED® API Terms of Use</a>.
+      </p>
     </footer>
   );
 }

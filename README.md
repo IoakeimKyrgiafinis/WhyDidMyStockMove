@@ -65,6 +65,11 @@ tests check that each is recovered, and that changing the future never changes t
 | iShares IWV holdings | The universe (Russell 3000) and sectors | Dated snapshot in `backend/universe/` |
 | Select Sector SPDR ETFs | Sector factors | XLK, XLF, XLV, XLY, XLP, XLI, XLE, XLB, XLU, XLRE, XLC |
 
+The site footer carries the notices these sources require: the FRED® API notice ("not endorsed or
+certified by the Federal Reserve Bank of St. Louis") with a link to the FRED® API Terms of Use,
+and a citation of and link to the GDELT Project. openFDA, ClinicalTrials.gov and SEC EDGAR are
+credited there too. Keep them if the footer changes.
+
 ## Run it locally
 
 Backend (Python 3.12):

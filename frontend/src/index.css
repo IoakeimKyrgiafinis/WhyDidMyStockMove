@@ -909,6 +909,16 @@ line.grid {
   margin: 0 auto;
   width: 100%;
 }
+.footer__sources a {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 2px;
+}
+.footer__sources a:hover {
+  color: var(--accent-hover);
+  text-decoration-color: var(--accent-line);
+}
 
 @media (max-width: 960px) {
   .grid {
