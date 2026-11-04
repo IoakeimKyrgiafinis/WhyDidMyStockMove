@@ -323,3 +323,51 @@ def test_invalid_insider_data_set_requests_are_rejected() -> None:
         client.insider_dataset(2026, 5)
     with pytest.raises(ValueError, match="quarter"):
         client.insider_dataset(2005, 1)
+
+
+# ---- press releases ----
+
+FOLDER = "https://www.sec.gov/Archives/edgar/data/7/000000712600001/"
+INDEX = FOLDER + "0000007-12-600001-index.htm"
+EXHIBIT = FOLDER + "ex991.htm"
+INDEX_PAGE = (
+    '<table><tr><td scope="row">2</td><td scope="row">Press release</td>'
+    '<td scope="row"><a href="/Archives/edgar/data/7/000000712600001/ex991.htm">ex991.htm</a></td>'
+    '<td scope="row">EX-99.1</td><td scope="row">900</td></tr></table>'
+)
+RELEASE_PAGE = (
+    "<p>Acme Reports Record Fourth Quarter Results</p><p>BOSTON - Acme Corp. (NYSE: ACME) today "
+    "reported record results for the fourth quarter, with revenue up 20% and earnings per share "
+    "up 25% from a year earlier.</p>"
+)
+
+
+def test_a_press_release_is_read_from_the_filing_index() -> None:
+    h = make_harness(
+        {
+            INDEX: [httpx.Response(200, text=INDEX_PAGE)],
+            EXHIBIT: [httpx.Response(200, text=RELEASE_PAGE)],
+        }
+    )
+
+    found = h.client.press_release(7, "0000007-12-600001")
+
+    assert found is not None
+    url, release = found
+    assert url == EXHIBIT
+    assert release is not None and release.title == "Acme Reports Record Fourth Quarter Results"
+
+
+def test_no_exhibit_and_oversized_exhibits() -> None:
+    bare = make_harness({INDEX: [httpx.Response(200, text="<table></table>")]})
+    huge = make_harness(
+        {
+            INDEX: [httpx.Response(200, text=INDEX_PAGE)],
+            EXHIBIT: [httpx.Response(200, content=b"x" * 3_000_001)],
+        }
+    )
+
+    assert bare.client.press_release(7, "0000007-12-600001") is None
+    assert huge.client.press_release(7, "0000007-12-600001") == (EXHIBIT, None)
+    with pytest.raises(ValueError, match="positive"):
+        bare.client.press_release(0, "x")

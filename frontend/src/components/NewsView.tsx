@@ -1,4 +1,4 @@
-import { api, type DayDetail } from "../api";
+import { api, type DayDetail, type Filing } from "../api";
 import { fmtDate, money, num, pct, titleCase, useAsync } from "../lib";
 import { HeadlineReactions } from "./HeadlineReactions";
 import { Info } from "./Info";
@@ -34,6 +34,8 @@ export function NewsView({ ticker, date, onBack }: { ticker: string; date: strin
 
 function NewsBody({ day }: { day: DayDetail }) {
   const { headlines, filings, insiders } = day.items;
+  const announcements = filings.filter((f) => f.category === "current");
+  const others = filings.filter((f) => f.category !== "current");
   return (
     <>
       <dl className="newsview__summary">
@@ -59,44 +61,65 @@ function NewsBody({ day }: { day: DayDetail }) {
       </dl>
 
       <div className="newsview__grid">
-        <section className="card">
-          <header className="card__head">
-            <h2>Headlines · {headlines.length}</h2>
-            <Info label="timing">
-              <p>
-                Items are placed on the first session that could react to them. A headline or filing after the 4pm New
-                York close counts toward the next day. Insider filings count from the day after they were filed, since
-                the bulk data has no filing time.
-              </p>
-            </Info>
-          </header>
-          {headlines.length === 0 ? (
-            <p className="muted">No headlines for this day.</p>
-          ) : (
-            <div className="newsview__list">
-              <HeadlineReactions ticker={day.ticker} date={day.date} headlines={headlines} />
-            </div>
+        <div className="newsview__main">
+          {announcements.length > 0 && (
+            <section className="card">
+              <header className="card__head">
+                <h2>Company announcements · {announcements.length}</h2>
+              </header>
+              <div className="newsview__list">
+                {announcements.map((f) => (
+                  <Announcement key={f.accession} filing={f} />
+                ))}
+              </div>
+            </section>
           )}
-        </section>
+          <section className="card">
+            <header className="card__head">
+              <h2>Headlines · {headlines.length}</h2>
+              <Info label="timing">
+                <p>
+                  Items are placed on the first session that could react to them. A headline or filing after the 4pm New
+                  York close counts toward the next day. Insider filings count from the day after they were filed, since
+                  the bulk data has no filing time.
+                </p>
+              </Info>
+            </header>
+            {headlines.length === 0 ? (
+              <p className="muted">No headlines for this day.</p>
+            ) : (
+              <div className="newsview__list">
+                <HeadlineReactions ticker={day.ticker} date={day.date} headlines={headlines} />
+              </div>
+            )}
+          </section>
+        </div>
 
         <div className="newsview__side">
           <section className="card">
             <header className="card__head">
-              <h2>Company filings · {filings.length}</h2>
+              <h2>Other SEC filings · {others.length}</h2>
+              <Info label="other filings">
+                <p>
+                  Ownership stakes (13D for activists and buyers of control, 13G for passive holders), share
+                  offerings, tender offers, merger votes and periodic reports. Routine ones are dimmed and get no
+                  marker on the chart.
+                </p>
+              </Info>
             </header>
-            {filings.length === 0 && <p className="muted small">No 8-K filings for this day.</p>}
+            {others.length === 0 && <p className="muted small">No other SEC filings for this day.</p>}
             <div className="newsview__list">
-              {filings.map((f) => (
-                <a key={f.accession} className="item item--filing" href={f.url} target="_blank" rel="noreferrer">
-                  <span className="item__kind">{f.earnings ? "Earnings 8-K" : "8-K"}</span>
-                  <span className="item__text">
-                    {f.labels.filter((l) => !l.startsWith("Financial statements")).join("; ") || "Company filing"}
-                  </span>
-                  {f.accepted_at && (
-                    <span className="item__meta">
-                      filed {fmtDate(f.accepted_at.slice(0, 10))} {f.accepted_at.slice(11, 16)}
-                    </span>
-                  )}
+              {others.map((f) => (
+                <a
+                  key={f.accession}
+                  className={`item item--${f.category}${f.minor ? " item--minor" : ""}`}
+                  href={f.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <span className="item__kind">{f.kind_label}</span>
+                  <span className="item__text muted">Form {f.form}</span>
+                  <FiledAt filing={f} />
                 </a>
               ))}
             </div>
@@ -127,5 +150,47 @@ function NewsBody({ day }: { day: DayDetail }) {
         </div>
       </div>
     </>
+  );
+}
+
+/** An 8-K or 6-K: the attached press release when there is one, otherwise its item list. */
+function Announcement({ filing: f }: { filing: Filing }) {
+  const kind = f.earnings ? "Earnings 8-K" : f.form === "6-K" ? "6-K" : "8-K";
+  const items = f.labels.filter((l) => !l.startsWith("Financial statements")).join("; ");
+  return (
+    <article className={`announcement${f.earnings ? " announcement--earnings" : ""}`}>
+      <header className="announcement__head">
+        <span className="tag">{kind}</span>
+        <FiledAt filing={f} />
+      </header>
+      {f.press ? (
+        <>
+          <h3 className="announcement__title">{f.press.title}</h3>
+          <p className="announcement__summary">{f.press.summary}</p>
+        </>
+      ) : (
+        <h3 className="announcement__title">{items || "Company filing"}</h3>
+      )}
+      <footer className="announcement__links">
+        {f.press && (
+          <a href={f.press.url} target="_blank" rel="noreferrer">
+            Read the press release
+          </a>
+        )}
+        <a href={f.url} target="_blank" rel="noreferrer">
+          The filing on EDGAR
+        </a>
+        {f.press && items && <span className="muted small">{items}</span>}
+      </footer>
+    </article>
+  );
+}
+
+function FiledAt({ filing: f }: { filing: Filing }) {
+  if (!f.accepted_at) return <span className="item__meta">filed {fmtDate(f.filing_date)}</span>;
+  return (
+    <span className="item__meta">
+      filed {fmtDate(f.accepted_at.slice(0, 10))} {f.accepted_at.slice(11, 16)}
+    </span>
   );
 }

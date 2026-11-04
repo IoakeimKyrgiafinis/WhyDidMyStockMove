@@ -7,7 +7,7 @@ import pytest
 
 from fakes import FakeFilings, make_insider_filing, make_insider_tx, make_ref
 from whymoved.adapters.edgar_errors import EdgarBlocked, EdgarFormatError, EdgarNotFound
-from whymoved.domain.corporate_events import normalize_events
+from whymoved.domain.corporate_events import EVENT_FORMS, normalize_events
 from whymoved.domain.filings import FilingFormatError, FilingNotFound
 from whymoved.domain.insider import empty_trades, normalize_trades
 from whymoved.services.filings import collect_filings, gap_start, merge_events
@@ -42,8 +42,8 @@ def test_each_company_is_listed_once_from_the_earliest_start() -> None:
     run(provider, ciks={"ACME": 3453, "BETA": 9})
 
     assert provider.list_calls == [
-        (3453, frozenset({"4", "8-K"}), EVENTS_SINCE),
-        (9, frozenset({"4", "8-K"}), EVENTS_SINCE),
+        (3453, frozenset({"4", *EVENT_FORMS}), EVENTS_SINCE),
+        (9, frozenset({"4", *EVENT_FORMS}), EVENTS_SINCE),
     ]
 
 
@@ -106,6 +106,33 @@ def test_8ks_in_the_events_window_become_events() -> None:
     assert result.events.iloc[0]["ticker"] == "ACME"
     assert result.report.n_events == 1
     assert provider.fetched == []  # 8-Ks need no document download
+
+
+def test_other_company_filings_are_collected_but_structured_notes_are_not() -> None:
+    refs = [
+        make_ref("d1", "SCHEDULE 13D", date(2026, 8, 3)),
+        make_ref("o1", "424B5", date(2026, 8, 4)),
+        make_ref("n1", "424B2", date(2026, 8, 4)),  # a bank's structured note
+        make_ref("q1", "10-Q", date(2026, 8, 5)),
+    ]
+    provider = FakeFilings(refs={3453: refs})
+
+    result = run(provider)
+
+    assert list(result.events["accession"]) == ["d1", "o1", "q1"]
+    assert list(result.events["form"]) == ["SCHEDULE 13D", "424B5", "10-Q"]
+    assert "424B2" not in EVENT_FORMS
+
+
+def test_stakes_the_company_reports_in_other_companies_are_left_out() -> None:
+    about_us = make_ref("0000102909-26-000001", "SCHEDULE 13G", date(2026, 8, 3))
+    by_us = make_ref("0000003453-26-000002", "SCHEDULE 13G/A", date(2026, 8, 3))  # our own CIK
+    own_8k = make_ref("0000003453-26-000003", "8-K", date(2026, 8, 3))
+    provider = FakeFilings(refs={3453: [about_us, by_us, own_8k]})
+
+    result = run(provider)
+
+    assert set(result.events["accession"]) == {"0000003453-26-000003", "0000102909-26-000001"}
 
 
 def test_failures_are_counted_and_the_permanent_ones_remembered() -> None:

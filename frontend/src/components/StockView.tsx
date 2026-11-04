@@ -162,7 +162,7 @@ function Loaded({
                   <p>
                     Each bar is one trading day, split into what the market explains, what the sector explains, and the
                     stock's own part. Dots below the axis mark days whose own move was unusual for this stock; the lane
-                    under them shows earnings filings, insider trades, other 8-Ks and headlines. Click any day to see it
+                    under them shows earnings filings, insider trades, other company filings and headlines. Click any day to see it
                     explained in detail, with everything that came out in time for it.
                   </p>
                 </Info>

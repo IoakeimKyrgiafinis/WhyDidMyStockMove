@@ -269,7 +269,7 @@ function MarkerGlyph({ marker: m, cx, cy }: { marker: Marker; cx: number; cy: nu
 function MarkerSummary({ marker: m }: { marker: Marker }) {
   const parts: string[] = [];
   if (m.earnings) parts.push("earnings filing");
-  else if (m.filings) parts.push(`${m.filings} 8-K filing${m.filings > 1 ? "s" : ""}`);
+  else if (m.filings) parts.push(`${m.filings} company filing${m.filings > 1 ? "s" : ""}`);
   if (m.buys) parts.push(`${m.buys} insider purchase${m.buys > 1 ? "s" : ""}`);
   if (m.sales) parts.push(`${m.sales} insider sale${m.sales > 1 ? "s" : ""}`);
   if (m.headlines) parts.push(`${m.headlines} headline${m.headlines > 1 ? "s" : ""}`);
@@ -297,7 +297,7 @@ export function MarkerLegend() {
       </span>
       <span>
         <svg width="10" height="10"><path className="mk mk--filing" d="M5,1L9,5L5,9L1,5Z" /></svg>
-        8-K
+        Filing
       </span>
       <span>
         <svg width="10" height="10"><circle className="mk mk--news" cx="5" cy="5" r="2.5" /></svg>

@@ -1499,3 +1499,81 @@ line.grid {
     animation: none;
   }
 }
+
+/* ---- company announcements and other filings ---- */
+
+.newsview__main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.announcement {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+}
+.announcement--earnings {
+  border-left-color: var(--ink);
+}
+.announcement__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.announcement__head .item__meta {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.announcement__title {
+  font-size: 1rem;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+}
+.announcement__summary {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+.announcement__links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 16px;
+  font-size: 0.85rem;
+}
+.announcement__links a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+.announcement__links a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.item--ownership {
+  border-left-color: var(--c-market);
+}
+.item--offering {
+  border-left-color: var(--neg);
+}
+.item--tender,
+.item--merger {
+  border-left-color: var(--c-sector);
+}
+.item--report {
+  border-left-color: var(--muted);
+}
+.item--minor {
+  opacity: 0.6;
+}
+.item--minor:hover {
+  opacity: 1;
+}

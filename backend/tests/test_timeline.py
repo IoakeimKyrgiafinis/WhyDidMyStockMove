@@ -192,3 +192,69 @@ def test_ticker_index_handles_chunked_arrow_strings() -> None:
 
     assert {k: list(v) for k, v in rows.items()} == {"AAA": [0], "BBB": [0, 2], "CCC": [1]}
     assert _rows_by_symbol(pd.Series([], dtype=object)) == {}
+
+
+# ---- other company filings and press releases ----
+
+
+def test_other_filings_are_labelled_and_press_releases_attached(market, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    import dataclasses
+    from datetime import datetime, time
+
+    from whymoved.adapters.press_store import ParquetPressStore
+    from whymoved.domain.corporate_events import EVENT_COLUMNS, normalize_events
+    from whymoved.domain.press import PressRelease, normalize_press, press_row
+
+    snap = market.snapshot
+    day = snap.close.index[500]
+    extra = normalize_events(
+        pd.DataFrame(
+            [
+                {
+                    "ticker": "BBB",
+                    "cik": 1002,
+                    "accession": accession,
+                    "form": form,
+                    "filing_date": day,
+                    "accepted_at": datetime.combine(day.date(), time(10, 0)),
+                    "items": "",
+                    "primary_document": "doc.htm",
+                }
+                for accession, form in [
+                    ("13d", "SCHEDULE 13D"),
+                    ("13g", "SC 13G/A"),
+                    ("p1", "424B5"),
+                    ("p2", "424B5"),
+                ]
+            ],
+            columns=EVENT_COLUMNS,
+        )
+    )
+    earnings_accession = str(snap.events["accession"].iloc[0])
+    release = PressRelease(title="Beta Reports Results", summary="Beta today reported results.")
+    ParquetPressStore(tmp_path).save(
+        normalize_press(
+            pd.DataFrame([press_row(earnings_accession, "BBB", "https://x/ex.htm", release)])
+        )
+    )
+    explainer = MoveExplainer(
+        dataclasses.replace(
+            snap,
+            events=pd.concat([snap.events, extra], ignore_index=True),
+            press_path=tmp_path / "press_releases.parquet",
+        ),
+        n_boot=50,
+    )
+    client = TestClient(create_app(explainer))
+
+    body = client.get(f"/api/v1/stocks/BBB/days/{day.date()}").json()
+    filings = {f["accession"]: f for f in body["items"]["filings"]}
+    markers = {m["date"]: m for m in client.get("/api/v1/stocks/BBB/markers").json()["markers"]}
+    earnings = explainer.timeline.filings("BBB").set_index("accession").loc[earnings_accession]
+
+    assert set(filings) == {"13d", "13g", "p1"}  # one prospectus per form and day
+    assert filings["13d"]["category"] == "ownership" and not filings["13d"]["minor"]
+    assert filings["13g"]["minor"] and filings["13d"]["press"] is None
+    assert markers[str(day.date())]["filings"] == 2  # the routine 13G gets no marker
+    assert earnings["press_title"] == "Beta Reports Results"
+    assert earnings["press_url"] == "https://x/ex.htm"

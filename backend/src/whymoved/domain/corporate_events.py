@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Literal
+
 import pandas as pd
 
 from whymoved.domain.filings import FilingRef
@@ -40,6 +43,74 @@ ITEM_LABELS = {
     "8.01": "Other events",
     "9.01": "Financial statements and exhibits",
 }
+
+
+FormCategory = Literal["current", "ownership", "offering", "tender", "merger", "report"]
+
+
+@dataclass(frozen=True)
+class FormKind:
+    """How a filing type is shown. `minor` filings are listed but get no chart marker: they are
+    routine (a passive holder's annual 13G, a scheduled quarterly report)."""
+
+    category: FormCategory
+    label: str
+    minor: bool = False
+
+
+_ACTIVIST = FormKind("ownership", "Activist or large stake (13D)")
+_PASSIVE = FormKind("ownership", "Passive large holder (13G)", minor=True)
+_REGISTRATION = FormKind("offering", "Registration of a share sale")
+_SHELF = FormKind("offering", "Shelf registration", minor=True)
+_PROSPECTUS = FormKind("offering", "Offering prospectus")
+
+# Company filings collected alongside 8-Ks. Schedules 13D and 13G changed their EDGAR form names
+# in 2025 ("SC 13D" became "SCHEDULE 13D"), so both spellings are listed. 424B2, 424B3 and 424B8
+# are left out on purpose: banks file tens of thousands of them for structured notes.
+FORM_KINDS: dict[str, FormKind] = {
+    "8-K": FormKind("current", "8-K"),
+    "6-K": FormKind("current", "Foreign issuer report (6-K)"),
+    "SCHEDULE 13D": _ACTIVIST,
+    "SCHEDULE 13D/A": _ACTIVIST,
+    "SC 13D": _ACTIVIST,
+    "SC 13D/A": _ACTIVIST,
+    "SCHEDULE 13G": _PASSIVE,
+    "SCHEDULE 13G/A": _PASSIVE,
+    "SC 13G": _PASSIVE,
+    "SC 13G/A": _PASSIVE,
+    "S-1": _REGISTRATION,
+    "F-1": _REGISTRATION,
+    "S-3": _SHELF,
+    "S-3ASR": _SHELF,
+    "F-3": _SHELF,
+    "F-3ASR": _SHELF,
+    "424B1": _PROSPECTUS,
+    "424B4": _PROSPECTUS,
+    "424B5": _PROSPECTUS,
+    "SC TO-T": FormKind("tender", "Tender offer for the shares"),
+    "SC TO-I": FormKind("tender", "Company tender offer (buyback)"),
+    "SC 14D9": FormKind("tender", "Board response to a tender offer"),
+    "DEFM14A": FormKind("merger", "Merger vote proxy"),
+    "10-Q": FormKind("report", "Quarterly report (10-Q)", minor=True),
+    "10-K": FormKind("report", "Annual report (10-K)", minor=True),
+    "20-F": FormKind("report", "Annual report (20-F)", minor=True),
+    "40-F": FormKind("report", "Annual report (40-F)", minor=True),
+}
+EVENT_FORMS = frozenset(FORM_KINDS)
+
+
+def form_kind(form: str) -> FormKind:
+    """The display kind of a form type; an unknown one is a plain current report."""
+    return FORM_KINDS.get(form.strip(), FormKind("current", form.strip() or "Filing"))
+
+
+def is_own_stake_report(form: str, accession: str, cik: int) -> bool:
+    """True for a 13D or 13G the company submitted itself. A company's filing list holds the
+    schedules about it and also those it files as a holder of another company's shares (a bank
+    files thousands). The first ten digits of an accession number are the submitter's CIK, so a
+    schedule submitted under the company's own CIK is about someone else."""
+    prefix = accession.split("-", 1)[0]
+    return form_kind(form).category == "ownership" and prefix.isdigit() and int(prefix) == cik
 
 
 def item_label(item: str) -> str:

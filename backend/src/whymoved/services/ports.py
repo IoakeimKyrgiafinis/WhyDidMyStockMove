@@ -9,6 +9,7 @@ import pandas as pd
 from whymoved.domain.bars import DailyBars
 from whymoved.domain.filings import FilingRef, InsiderFiling
 from whymoved.domain.news import NewsItem
+from whymoved.domain.press import PressRelease
 
 
 class PriceProvider(Protocol):
@@ -44,6 +45,15 @@ class FilingsProvider(Protocol):
 
     def insider_filing(self, ref: FilingRef) -> InsiderFiling:
         """The parsed contents of one Form 4."""
+        ...
+
+
+class PressReleaseProvider(Protocol):
+    """Source of the press releases attached to filings. Implemented by the EDGAR client."""
+
+    def press_release(self, cik: int, accession: str) -> tuple[str, PressRelease | None] | None:
+        """The exhibit's address and its parsed release (None if unreadable), or None if the
+        filing has no exhibit 99."""
         ...
 
 

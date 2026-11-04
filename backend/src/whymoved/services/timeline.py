@@ -9,8 +9,9 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from whymoved.adapters.press_store import read_ticker
 from whymoved.adapters.snapshot import Snapshot
-from whymoved.domain.corporate_events import is_earnings, item_label
+from whymoved.domain.corporate_events import form_kind, is_earnings, item_label
 from whymoved.domain.events import (
     MAX_SNAP_DAYS,
     AveragePath,
@@ -23,6 +24,7 @@ from whymoved.domain.events import (
     permutation_test,
 )
 from whymoved.domain.insider_summary import summarize_filings
+from whymoved.domain.press import empty_press
 from whymoved.domain.reaction import ReactionSize, reaction_size
 from whymoved.domain.timing import session_for_filing, session_for_utc
 
@@ -79,13 +81,14 @@ class Timeline:
         self._news = snapshot.news
         self._events = snapshot.events
         self._trades = snapshot.trades
+        self._press_path = snapshot.press_path
         self.pooled: dict[str, object] | None = snapshot.insider_study
 
         # Row positions per ticker. A headline can name several tickers.
         self._news_rows = _rows_by_symbol(self._news["symbols"])
         self._event_rows = {
             str(t): np.asarray(rows, dtype=np.int64)
-            for t, rows in self._events.groupby("ticker", sort=False).indices.items()
+            for t, rows in self._events.groupby("ticker", sort=False, observed=True).indices.items()
         }
         self._trade_rows = {
             str(t): np.asarray(rows, dtype=np.int64)
@@ -112,8 +115,9 @@ class Timeline:
         return frame.dropna(subset=["day"]).sort_values("created_at", ascending=False)
 
     def filings(self, ticker: str) -> pd.DataFrame:
-        """8-K filings. Columns: accession, filing_date, accepted_at, items, labels,
-        earnings, url, day."""
+        """Company filings. Columns: accession, form, category, kind_label, minor,
+        filing_date, accepted_at, items, labels, earnings, url, day, and the attached press
+        release as press_title, press_summary, press_url (empty strings if none)."""
         t = self._explainer.member(ticker).ticker
         return self._explainer.cached(("filings", t), lambda: self._filings(t))
 
@@ -129,17 +133,45 @@ class Timeline:
             dtype="datetime64[ns]",
         )
         frame["day"] = _snap(sessions, self._explainer.prices(ticker).index)
+        forms = [str(f) for f in frame["form"]]
+        kinds = [form_kind(f) for f in forms]
+        frame["form"] = forms
+        frame["category"] = [k.category for k in kinds]
+        frame["kind_label"] = [k.label for k in kinds]
+        frame["minor"] = [k.minor for k in kinds]
         frame["labels"] = [
             [item_label(i) for i in str(items).split(",") if i.strip()] for items in frame["items"]
         ]
-        frame["earnings"] = [is_earnings(str(items)) for items in frame["items"]]
+        frame["earnings"] = [
+            f == "8-K" and is_earnings(str(items))
+            for f, items in zip(forms, frame["items"], strict=True)
+        ]
         frame["url"] = [
             f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{str(acc).replace('-', '')}/{doc}"
             for cik, acc, doc in zip(
                 frame["cik"], frame["accession"], frame["primary_document"], strict=True
             )
         ]
-        return frame.dropna(subset=["day"]).sort_values("filing_date", ascending=False)
+        frame = frame.dropna(subset=["day"])
+        # One row per form and day for offerings and stakes: a shelf takedown can bring several
+        # prospectus supplements, and a holder that files through an agent (whose ID, not the
+        # company's, starts the accession number) can send a batch of schedules on one day.
+        batched = frame["category"].isin(["offering", "ownership"])
+        frame = frame[~(frame.duplicated(subset=["form", "day"]) & batched)]
+        frame = self._with_press(frame, ticker)
+        return frame.sort_values("filing_date", ascending=False)
+
+    def _with_press(self, frame: pd.DataFrame, ticker: str) -> pd.DataFrame:
+        """Attach each filing's press release (title, summary, exhibit address), if any."""
+        press = (
+            read_ticker(self._press_path, ticker) if self._press_path is not None else empty_press()
+        )
+        by_accession = press.set_index("accession")[["title", "summary", "url"]]
+        by_accession.columns = ["press_title", "press_summary", "press_url"]
+        joined = frame.join(by_accession, on="accession")
+        for name in ("press_title", "press_summary", "press_url"):
+            joined[name] = joined[name].fillna("").astype(str)
+        return joined
 
     def insiders(self, ticker: str) -> pd.DataFrame:
         """One row per Form 4 filing (see FILING_COLUMNS), plus the day it became public."""

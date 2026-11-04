@@ -11,6 +11,7 @@ from whymoved.domain.corporate_events import (
     EVENT_COLUMNS,
     empty_events,
     event_row,
+    form_kind,
     is_earnings,
     item_label,
     normalize_events,
@@ -21,6 +22,16 @@ def test_item_labels() -> None:
     assert item_label("2.02").startswith("Results of operations")
     assert item_label(" 5.02 ").startswith("Departure")
     assert item_label("9.9") == "Item 9.9"
+
+
+def test_form_kinds() -> None:
+    assert form_kind("SC 13D/A") == form_kind("SCHEDULE 13D")  # old and new EDGAR names
+    assert form_kind("SCHEDULE 13G").minor and not form_kind("SCHEDULE 13D").minor
+    assert form_kind("424B5").category == "offering"
+    assert form_kind("10-Q").minor
+    assert form_kind("8-K").category == "current" and not form_kind("8-K").minor
+    unknown = form_kind("XYZ")
+    assert unknown.label == "XYZ" and unknown.category == "current"
 
 
 @pytest.mark.parametrize(

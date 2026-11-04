@@ -110,8 +110,21 @@ export interface Headline {
   created_at: string;
 }
 
-export interface Filing8K {
+export interface PressRelease {
+  title: string;
+  summary: string;
+  url: string;
+}
+
+export type FilingCategory = "current" | "ownership" | "offering" | "tender" | "merger" | "report";
+
+/** A company filing: an 8-K or 6-K, or a stake, offering, tender, merger or periodic report. */
+export interface Filing {
   accession: string;
+  form: string;
+  category: FilingCategory;
+  kind_label: string;
+  minor: boolean;
   filing_date: string;
   accepted_at: string | null;
   items: string[];
@@ -119,6 +132,7 @@ export interface Filing8K {
   earnings: boolean;
   url: string;
   day: string;
+  press: PressRelease | null;
 }
 
 export type Signal = "buy" | "sale" | "planned_sale" | "routine" | "other";
@@ -142,7 +156,7 @@ export interface InsiderFiling {
 }
 
 export interface DayDetail extends Day {
-  items: { headlines: Headline[]; filings: Filing8K[]; insiders: InsiderFiling[] };
+  items: { headlines: Headline[]; filings: Filing[]; insiders: InsiderFiling[] };
 }
 
 export interface Marker {

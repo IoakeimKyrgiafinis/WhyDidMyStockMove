@@ -20,6 +20,7 @@ from whymoved.adapters.http_policy import RetryPolicy
 from whymoved.adapters.insider_store import SIGNAL_KINDS, SIGNALS_FILE, TRADES_FILE
 from whymoved.adapters.news_store import NEWS_FILE
 from whymoved.adapters.parquet_store import CLOSE_FILE
+from whymoved.adapters.press_store import PRESS_FILE
 from whymoved.domain.corporate_events import empty_events, normalize_events
 from whymoved.domain.insider import empty_trades
 from whymoved.domain.universe import UniverseMember
@@ -31,7 +32,7 @@ UNIVERSE_FILE = "universe.json"
 INSIDER_STUDY_FILE = "insider_study.json"
 REQUIRED_FILES = (CLOSE_FILE, UNIVERSE_FILE)  # the API never reads volumes
 # Produced by collectors that may fail on a given night; the site works without them.
-OPTIONAL_FILES = (NEWS_FILE, EVENTS_FILE, SIGNALS_FILE, INSIDER_STUDY_FILE)
+OPTIONAL_FILES = (NEWS_FILE, EVENTS_FILE, SIGNALS_FILE, INSIDER_STUDY_FILE, PRESS_FILE)
 NEWS_COLUMNS = ["headline", "source", "url", "created_at", "symbols"]
 NEWS_DAYS = 400
 BATCH_ROWS = 50_000
@@ -66,6 +67,9 @@ _TRADE_CATEGORIES = (
 )
 
 
+_EVENT_CATEGORIES = ("ticker", "form", "items")
+
+
 class SnapshotError(Exception):
     """The snapshot is missing, unreadable or could not be downloaded."""
 
@@ -86,6 +90,8 @@ class Snapshot:
     events: pd.DataFrame = field(default_factory=empty_events)
     trades: pd.DataFrame = field(default_factory=empty_trades)
     insider_study: dict[str, object] | None = None
+    # Press releases stay on disk: the timeline reads one stock's rows at a time.
+    press_path: Path | None = None
 
 
 def load_snapshot(directory: Path) -> Snapshot:
@@ -138,6 +144,7 @@ def load_snapshot(directory: Path) -> Snapshot:
         events=events,
         trades=trades,
         insider_study=_optional(directory / INSIDER_STUDY_FILE, _read_json, None),
+        press_path=directory / PRESS_FILE if (directory / PRESS_FILE).exists() else None,
     )
 
 
@@ -211,7 +218,14 @@ def _read_close(path: Path) -> pd.DataFrame:
 
 
 def _read_events(path: Path) -> pd.DataFrame:
-    return normalize_events(pd.read_parquet(path))
+    """Company filings with compact text columns: repeated values as categories, the unique
+    accession numbers and document names as Arrow strings (a quarter of the memory)."""
+    events = normalize_events(pd.read_parquet(path))
+    for name in _EVENT_CATEGORIES:
+        events[name] = events[name].astype("category")
+    for name in ("accession", "primary_document"):
+        events[name] = events[name].astype(pd.ArrowDtype(pa.string()))
+    return events
 
 
 def _trades_path(directory: Path) -> Path:

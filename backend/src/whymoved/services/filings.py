@@ -9,8 +9,10 @@ import pandas as pd
 
 from whymoved.domain.corporate_events import (
     EVENT_COLUMNS,
+    EVENT_FORMS,
     empty_events,
     event_row,
+    is_own_stake_report,
     normalize_events,
 )
 from whymoved.domain.filings import FilingFormatError, FilingNotFound
@@ -27,13 +29,13 @@ class FilingsReport:
     n_form4_listed: int  # Form 4s in the gap window
     n_form4_fetched: int  # fetched and parsed this run
     n_form4_failed: int
-    n_events: int  # 8-Ks in the events window
+    n_events: int  # company filings in the events window
 
 
 @dataclass(frozen=True, eq=False)
 class FilingsResult:
     trades: pd.DataFrame  # fresh rows from Form 4 XML
-    events: pd.DataFrame  # 8-Ks in the events window
+    events: pd.DataFrame  # company filings in the events window
     seen: dict[str, date]  # processed filings that need no rows (derivative-only or malformed)
     report: FilingsReport
 
@@ -81,7 +83,8 @@ def collect_filings(
     form4_since: date,
     events_since: date,
 ) -> FilingsResult:
-    """List each company's Form 4s and 8-Ks, fetch the unseen Form 4s, and collect the 8-Ks.
+    """List each company's Form 4s and company filings (8-Ks and the other EVENT_FORMS), fetch
+    the unseen Form 4s, and collect the company filings.
 
     One filing list per company serves both purposes. A missing company is counted and skipped;
     a missing or malformed filing is counted and skipped. Blocking or exhausted retries are not
@@ -99,15 +102,16 @@ def collect_filings(
 
     for ticker, cik in ciks.items():
         try:
-            refs = provider.recent_filings(cik, {"4", "8-K"}, earliest)
+            refs = provider.recent_filings(cik, {"4", *EVENT_FORMS}, earliest)
         except FilingNotFound:
             missing += 1
             logger.warning("no filing list for %s (CIK %d)", ticker, cik)
             continue
 
         for ref in refs:
-            if ref.form == "8-K":
-                if ref.filing_date >= events_since:
+            if ref.form in EVENT_FORMS:
+                own_stake = is_own_stake_report(ref.form, ref.accession, cik)
+                if ref.filing_date >= events_since and not own_stake:
                     event_rows.append(event_row(ticker, ref))
                 continue
             if ref.form != "4" or ref.filing_date < form4_since:
@@ -148,7 +152,7 @@ def collect_filings(
         n_events=len(events),
     )
     logger.info(
-        "filings: %d Form 4 listed, %d fetched, %d failed, %d 8-Ks",
+        "filings: %d Form 4 listed, %d fetched, %d failed, %d company filings",
         listed,
         fetched,
         failed,

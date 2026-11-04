@@ -25,8 +25,10 @@ from whymoved.adapters.edgar_parse import (
     raw_xml_document,
 )
 from whymoved.adapters.http_policy import RateLimiter, RetryPolicy
+from whymoved.adapters.press_parse import decode, exhibit_url, extract_press_release
 from whymoved.config import JobSettings
 from whymoved.domain.filings import FilingRef, InsiderFiling
+from whymoved.domain.press import PressRelease
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,7 @@ INSIDER_DATASET_BASES = (
 MIN_INTERVAL_SECONDS = 0.12  # about 8 requests a second, under the SEC's limit of 10
 MAX_WAIT_SECONDS = 90.0
 FORM4_TYPES = frozenset({"4", "4/A"})
+MAX_EXHIBIT_BYTES = 3_000_000  # releases are tens of kilobytes; bigger is a financial report
 
 
 def from_settings(
@@ -136,6 +139,21 @@ class EdgarClient:
             raise EdgarFormatError("the filing has no primary document")
         url = f"{ARCHIVES_URL}{ref.cik}/{ref.accession.replace('-', '')}/{document}"
         return parse_form4(self._get(url).content, ref)
+
+    def press_release(self, cik: int, accession: str) -> tuple[str, PressRelease | None] | None:
+        """The press release attached to a filing as exhibit 99: its address and, if it could
+        be read, its headline and lead. None if the filing has no exhibit 99 (or it is too
+        large to be a release). Two requests: the filing's index page, then the exhibit."""
+        if cik < 1:
+            raise ValueError("cik must be positive")
+        folder = f"{ARCHIVES_URL}{cik}/{accession.replace('-', '')}/"
+        url = exhibit_url(self._get(f"{folder}{accession}-index.htm").text)
+        if url is None:
+            return None
+        response = self._get(url)
+        if len(response.content) > MAX_EXHIBIT_BYTES:
+            return url, None
+        return url, extract_press_release(decode(response.content))
 
     def insider_dataset(self, year: int, quarter: int) -> bytes | None:
         """The raw ZIP of the SEC's quarterly insider transactions data set.

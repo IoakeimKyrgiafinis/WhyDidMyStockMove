@@ -199,6 +199,7 @@ def markers(ticker: str, explainer: Explainer) -> MarkersResponse:
     timeline = explainer.timeline
     h = timeline.headlines(member.ticker)
     f = timeline.filings(member.ticker)
+    f = f[~f["minor"]]  # routine filings (passive 13Gs, quarterly reports) get no marker
     i = timeline.insiders(member.ticker)
 
     frames = [

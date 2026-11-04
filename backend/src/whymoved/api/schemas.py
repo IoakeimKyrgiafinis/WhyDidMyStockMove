@@ -152,8 +152,18 @@ class HeadlineOut(BaseModel):
     created_at: datetime
 
 
+class PressReleaseOut(BaseModel):
+    title: str
+    summary: str
+    url: str
+
+
 class FilingOut(BaseModel):
     accession: str
+    form: str
+    category: Literal["current", "ownership", "offering", "tender", "merger", "report"]
+    kind_label: str
+    minor: bool
     filing_date: date
     accepted_at: datetime | None
     items: list[str]
@@ -161,6 +171,7 @@ class FilingOut(BaseModel):
     earnings: bool
     url: str
     day: date
+    press: PressReleaseOut | None
 
 
 class InsiderFilingOut(BaseModel):

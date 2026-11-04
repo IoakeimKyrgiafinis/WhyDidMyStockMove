@@ -16,6 +16,7 @@ from whymoved.api.schemas import (
     HeadlineReactionOut,
     InsiderFilingOut,
     PermutationOut,
+    PressReleaseOut,
     ReactionOut,
     ReactionPath,
     StockStudyOut,
@@ -64,9 +65,22 @@ def filings(frame: pd.DataFrame) -> list[FilingOut]:
     for r in frame.to_dict("records"):
         accepted = r["accepted_at"] if isinstance(r["accepted_at"], date) else None
         accepted_ts = pd.Timestamp(accepted) if accepted is not None else None
+        press = (
+            PressReleaseOut(
+                title=str(r["press_title"]),
+                summary=str(r["press_summary"]),
+                url=str(r["press_url"]),
+            )
+            if r["press_title"]
+            else None
+        )
         out.append(
             FilingOut(
                 accession=str(r["accession"]),
+                form=str(r["form"]),
+                category=r["category"],
+                kind_label=str(r["kind_label"]),
+                minor=bool(r["minor"]),
                 filing_date=pd.Timestamp(r["filing_date"]).date(),
                 accepted_at=(
                     accepted_ts.to_pydatetime()
@@ -78,6 +92,7 @@ def filings(frame: pd.DataFrame) -> list[FilingOut]:
                 earnings=bool(r["earnings"]),
                 url=str(r["url"]),
                 day=pd.Timestamp(r["day"]).date(),
+                press=press,
             )
         )
     return out

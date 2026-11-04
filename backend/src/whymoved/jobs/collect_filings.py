@@ -26,7 +26,9 @@ DEFAULT_EVENTS_YEARS = 2.0
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Fill the insider gap and collect 8-K events.")
+    parser = argparse.ArgumentParser(
+        description="Fill the insider gap and collect company filings."
+    )
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--events-years", type=float, default=DEFAULT_EVENTS_YEARS)
     parser.add_argument("--today", type=date.fromisoformat, default=None)
@@ -70,7 +72,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             form4_since = gap_start(trades, today)
             seen = {a: d for a, d in load_seen(data_dir).items() if d >= form4_since}
             known = set(trades["accession"]) | set(seen)
-            logger.info("gap fill from %s, 8-K events from %s", form4_since, events_since)
+            logger.info("gap fill from %s, company filings from %s", form4_since, events_since)
 
             result = collect_filings(
                 edgar, ciks, known, form4_since=form4_since, events_since=events_since

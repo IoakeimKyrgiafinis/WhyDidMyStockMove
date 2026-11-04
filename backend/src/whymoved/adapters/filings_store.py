@@ -16,7 +16,7 @@ SEEN_FILE = "filings_seen.json"
 
 
 class ParquetEventStore:
-    """8-K events as one parquet file, replaced atomically."""
+    """Company filings (8-Ks and the other event forms) as one parquet file, replaced atomically."""
 
     def __init__(self, directory: Path) -> None:
         self._directory = directory
