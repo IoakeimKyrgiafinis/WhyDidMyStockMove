@@ -45,6 +45,21 @@ export function fmtDate(iso: string): string {
   return DATE_FMT.format(new Date(`${iso}T00:00:00`));
 }
 
+const NY_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/** A UTC time from the API (with or without a trailing Z) as New York time, e.g. "Aug 26, 2026, 4:21 PM ET". */
+export function fmtNewYork(utc: string): string {
+  const zoned = /(?:[zZ]|[+-]\d\d:\d\d)$/.test(utc) ? utc : `${utc}Z`;
+  return `${NY_FMT.format(new Date(zoned))} ET`;
+}
+
 export function fmtMonth(iso: string): string {
   return MONTH_FMT.format(new Date(`${iso}T00:00:00`));
 }

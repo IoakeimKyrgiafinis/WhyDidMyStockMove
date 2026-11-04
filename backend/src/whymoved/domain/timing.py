@@ -37,12 +37,13 @@ def session_for_utc(moment: datetime) -> date:
 def session_for_filing(filing_date: date, accepted_at: datetime | None) -> date:
     """The first session that can react to an EDGAR filing.
 
-    EDGAR acceptance times are labelled UTC but are widely reported to be Eastern wall-clock
-    times. Treating the stamped time as Eastern is the safe reading: under either reading a
-    stamp before 16:00 was public before the close. Without an acceptance time the filing may
-    have arrived after the close, so the next day is used, which gives up the filing day's
-    reaction rather than risk look-ahead.
+    `accepted_at` is the EDGAR acceptance time as naive UTC. It is genuine UTC: across 55,000
+    filings the stamps peak at 20:00-21:00 (just after the 16:00 New York close, when earnings
+    come out) and 10:00-12:00 (before the open), and almost none fall between 03:00 and 10:00,
+    when EDGAR is closed. Without an acceptance time the filing may have arrived after the
+    close, so the next day is used, which gives up the filing day's reaction rather than risk
+    look-ahead.
     """
     if accepted_at is None or pd.isna(accepted_at):
         return filing_date + timedelta(days=1)
-    return session_for_eastern(accepted_at)
+    return session_for_utc(accepted_at)

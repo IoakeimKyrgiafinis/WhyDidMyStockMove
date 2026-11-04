@@ -1,5 +1,5 @@
 import { api, type DayDetail, type Filing } from "../api";
-import { fmtDate, money, num, pct, titleCase, useAsync } from "../lib";
+import { fmtDate, fmtNewYork, money, num, pct, titleCase, useAsync } from "../lib";
 import { HeadlineReactions } from "./HeadlineReactions";
 import { Info } from "./Info";
 
@@ -190,7 +190,7 @@ function FiledAt({ filing: f }: { filing: Filing }) {
   if (!f.accepted_at) return <span className="item__meta">filed {fmtDate(f.filing_date)}</span>;
   return (
     <span className="item__meta">
-      filed {fmtDate(f.accepted_at.slice(0, 10))} {f.accepted_at.slice(11, 16)}
+      filed {fmtNewYork(f.accepted_at)}
     </span>
   );
 }

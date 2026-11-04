@@ -26,9 +26,15 @@ def test_utc_headlines_are_converted_to_new_york_time() -> None:
     assert session_for_utc(datetime(2026, 1, 16, 2, 0)) == date(2026, 1, 16)
 
 
-def test_filings_use_the_acceptance_time() -> None:
-    assert session_for_filing(date(2026, 8, 3), datetime(2026, 8, 3, 9, 15)) == date(2026, 8, 3)
-    assert session_for_filing(date(2026, 8, 3), datetime(2026, 8, 3, 17, 30)) == date(2026, 8, 4)
+def test_filings_use_the_acceptance_time_in_utc() -> None:
+    # 13:15 UTC is 9:15 in New York: before the open.
+    assert session_for_filing(date(2026, 8, 3), datetime(2026, 8, 3, 13, 15)) == date(2026, 8, 3)
+    # 17:30 UTC is 13:30 in New York, still before the close (read as Eastern it was after).
+    assert session_for_filing(date(2026, 8, 3), datetime(2026, 8, 3, 17, 30)) == date(2026, 8, 3)
+    # 20:21 UTC is 16:21: an earnings release after the close moves the next session.
+    assert session_for_filing(date(2026, 8, 3), datetime(2026, 8, 3, 20, 21)) == date(2026, 8, 4)
+    # 01:30 UTC is 21:30 the evening before in New York.
+    assert session_for_filing(date(2026, 8, 3), datetime(2026, 8, 4, 1, 30)) == date(2026, 8, 4)
 
 
 def test_filings_without_an_acceptance_time_count_from_the_next_day() -> None:

@@ -128,7 +128,7 @@ def _events(index: pd.DatetimeIndex) -> pd.DataFrame:
                 "accession": f"0001002-24-{k:06d}",
                 "form": "8-K",
                 "filing_date": filed,
-                "accepted_at": datetime.combine(filed, time(16, 5)),
+                "accepted_at": datetime.combine(filed, time(21, 5)),  # UTC, after the close
                 "items": "2.02,9.01",
                 "primary_document": "earnings.htm",
             }
@@ -141,7 +141,7 @@ def _events(index: pd.DatetimeIndex) -> pd.DataFrame:
             "accession": "0001002-24-999999",
             "form": "8-K",
             "filing_date": filed,
-            "accepted_at": datetime.combine(filed, time(10, 0)),
+            "accepted_at": datetime.combine(filed, time(14, 0)),  # UTC: 9 or 10 in New York
             "items": "5.02",
             "primary_document": "officer.htm",
         }

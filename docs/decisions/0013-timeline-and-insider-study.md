@@ -5,9 +5,11 @@ to it. Before the 16:00 New York close it is that day; at or after the close, th
 weekends and holidays snap forward to the next trading day (at most 5 calendar days).
 
 - Headlines carry true UTC timestamps and are converted to New York time (with daylight saving).
-- EDGAR acceptance times are labelled UTC but widely reported to be Eastern wall-clock times.
-  The stamped time is read as Eastern. A stamp before 16:00 was public before the close under
-  either reading, so this never builds in look-ahead; at worst it gives up a filing day.
+- EDGAR acceptance times are genuine UTC and are converted the same way. (Until November 2026
+  they were read as Eastern, which never built in look-ahead but pushed filings made between
+  noon and 16:00 New York time to the next day. Across 55,000 filings the stamps peak at
+  20:00-21:00 UTC, just after the close, and almost none fall in 03:00-10:00 UTC, when EDGAR is
+  closed: the UTC reading is right.)
 - The bulk Form 4 data sets have no acceptance time, so insider filings count from the day
   after the filing date. This gives up the filing day's reaction rather than risk look-ahead.
 

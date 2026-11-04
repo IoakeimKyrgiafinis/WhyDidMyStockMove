@@ -165,7 +165,7 @@ class FilingOut(BaseModel):
     kind_label: str
     minor: bool
     filing_date: date
-    accepted_at: datetime | None
+    accepted_at: datetime | None  # UTC, without a zone
     items: list[str]
     labels: list[str]
     earnings: bool
