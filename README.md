@@ -14,7 +14,7 @@ It is descriptive, not predictive, and it is not investment advice.
 | Day by day | Every day's split; click a day to explain it | Out-of-sample decomposition, Newey-West error bands |
 | Was it unusual? | How surprising the unexplained part was | EWMA-scaled score, empirical tail probability next to the normal one, expected false alarms |
 | Model health | How much of the stock is just the market | Block-bootstrap variance shares, R², beta stability, Ljung-Box, Jarque-Bera, ARCH |
-| What else happened | Economic releases (Fed decisions, inflation, jobs, GDP), headlines, world press coverage, company press releases, 8-Ks and other SEC filings (stakes, offerings, tender offers) and insider trades on the day they could first move the price | New York session timing with no look-ahead |
+| What else happened | Economic releases (Fed decisions, inflation, jobs, GDP), headlines, world press coverage, FDA approvals and recalls, Phase 3 trial news, company press releases, 8-Ks and other SEC filings (stakes, offerings, tender offers) and insider trades on the day they could first move the price | New York session timing with no look-ahead |
 | Headline reactions | The move beyond expected in the 30 minutes after a headline, and before it | 5-minute factor model, time-of-day volatility, empirical percentile |
 | Earnings days | How much bigger results days are than ordinary days | Permutation test on absolute scores |
 | Insider trades | Purchases, sales and pre-planned sales from SEC Form 4 | Event study from the filing date, permutation test, pooled study clustered by date |
@@ -34,6 +34,7 @@ GitHub Actions (nightly)                          Render (API)                 V
   filings     SEC EDGAR 8-K/Form 4 ─┤  release     compute per request         (Vite)
   economy     FRED releases        ─┤
   world press GDELT 15-min files   ─┤
+  health      openFDA, trials      ─┤
   study       pooled insider study ─┘              (FastAPI)
                                                        │ on demand
                                                        └─► Alpaca 5-minute bars (headline reactions)
@@ -41,7 +42,7 @@ GitHub Actions (nightly)                          Render (API)                 V
 
 - `backend/src/whymoved/domain`: the statistics, pure functions with no I/O.
 - `backend/src/whymoved/services`: orchestration (decomposition, timeline, reactions, peers).
-- `backend/src/whymoved/adapters`: Alpaca, SEC EDGAR, FRED, GDELT, parquet storage, snapshot download.
+- `backend/src/whymoved/adapters`: Alpaca, SEC EDGAR, FRED, GDELT, openFDA, ClinicalTrials.gov, parquet storage, snapshot download.
 - `backend/src/whymoved/api`: FastAPI under `/api/v1`, one error format, Server-Sent Events for
   the peer grid and replay, request IDs, JSON logs, cache headers.
 - `backend/src/whymoved/jobs`: the nightly collectors and the pooled insider study.
@@ -59,6 +60,8 @@ tests check that each is recovered, and that changing the future never changes t
 | SEC EDGAR | Form 4 insider trades, 8-K press releases, 13D/13G, offerings, tender offers, periodic reports | Public data; requests identify you and stay under 10 per second |
 | FRED (St. Louis Fed) | Economic calendar: Fed rate decisions, CPI, PPI, PCE, jobs report, jobless claims, retail sales, GDP, job openings | Free key; figures as first published |
 | GDELT Project | World press coverage: articles naming each company, how many against a usual day | Raw 15-minute files, no key; titles and links only |
+| openFDA | New drugs and new uses approved, device approvals, Class I recalls (health care stocks) | No key; dated but untimed, so counted from the next session |
+| ClinicalTrials.gov | Phase 3 results posted and Phase 3 trials stopped | No key |
 | iShares IWV holdings | The universe (Russell 3000) and sectors | Dated snapshot in `backend/universe/` |
 | Select Sector SPDR ETFs | Sector factors | XLK, XLF, XLV, XLY, XLP, XLI, XLE, XLB, XLU, XLRE, XLC |
 
@@ -76,7 +79,7 @@ uvicorn whymoved.main:app --reload
 ```
 
 The API reads the snapshot from `backend/data/`. Either run the nightly jobs once
-(`python -m whymoved.jobs.nightly`, then `collect_news`, `collect_insider`, `collect_filings`, `collect_press`, `collect_macro`, `collect_world_news`,
+(`python -m whymoved.jobs.nightly`, then `collect_news`, `collect_insider`, `collect_filings`, `collect_press`, `collect_macro`, `collect_world_news`, `collect_health`,
 `insider_study`), or set `WHYMOVED_SNAPSHOT_URL` to your release (see below) to download it.
 
 Frontend (Node 22+):

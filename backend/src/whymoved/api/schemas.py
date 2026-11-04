@@ -223,12 +223,22 @@ class WorldNewsOut(BaseModel):
     stories: list[WorldStoryOut]
 
 
+class HealthEventOut(BaseModel):
+    kind: Literal["drug_approval", "device_approval", "recall", "trial_results", "trial_stopped"]
+    label: str
+    date: date  # the date the source gives; the event counts from the next session
+    title: str
+    detail: str
+    url: str
+
+
 class DayItemsOut(BaseModel):
     headlines: list[HeadlineOut]
     filings: list[FilingOut]
     insiders: list[InsiderFilingOut]
     macro: list[MacroReleaseOut]
     world: WorldNewsOut
+    health: list[HealthEventOut]
 
 
 class DayDetailResponse(DayResponse):

@@ -16,6 +16,7 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from whymoved.adapters.filings_store import EVENTS_FILE
+from whymoved.adapters.health_store import HEALTH_FILE
 from whymoved.adapters.http_policy import RetryPolicy
 from whymoved.adapters.insider_store import SIGNAL_KINDS, SIGNALS_FILE, TRADES_FILE
 from whymoved.adapters.macro_store import MACRO_FILE
@@ -24,6 +25,7 @@ from whymoved.adapters.parquet_store import CLOSE_FILE
 from whymoved.adapters.press_store import PRESS_FILE
 from whymoved.adapters.world_store import WORLD_FILE
 from whymoved.domain.corporate_events import empty_events, normalize_events
+from whymoved.domain.health import empty_health, normalize_health
 from whymoved.domain.insider import empty_trades
 from whymoved.domain.macro import empty_macro, normalize_macro
 from whymoved.domain.universe import UniverseMember
@@ -43,6 +45,7 @@ OPTIONAL_FILES = (
     PRESS_FILE,
     MACRO_FILE,
     WORLD_FILE,
+    HEALTH_FILE,
 )
 NEWS_COLUMNS = ["headline", "source", "url", "created_at", "symbols"]
 NEWS_DAYS = 400
@@ -106,6 +109,7 @@ class Snapshot:
     macro: pd.DataFrame = field(default_factory=empty_macro)
     # World press articles also stay on disk, read one stock (or one day) at a time.
     world_path: Path | None = None
+    health: pd.DataFrame = field(default_factory=empty_health)
 
 
 def load_snapshot(directory: Path) -> Snapshot:
@@ -144,6 +148,9 @@ def load_snapshot(directory: Path) -> Snapshot:
         insider_study=_optional(directory / INSIDER_STUDY_FILE, _read_json, None),
         press_path=directory / PRESS_FILE if (directory / PRESS_FILE).exists() else None,
         world_path=directory / WORLD_FILE if (directory / WORLD_FILE).exists() else None,
+        health=_optional(
+            directory / HEALTH_FILE, lambda p: normalize_health(pd.read_parquet(p)), empty_health()
+        ),
         macro=_optional(
             directory / MACRO_FILE, lambda p: normalize_macro(pd.read_parquet(p)), empty_macro()
         ),

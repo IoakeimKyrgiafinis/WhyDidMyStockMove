@@ -1636,3 +1636,16 @@ line.grid {
   color: var(--muted);
   font-size: 0.76rem;
 }
+
+/* FDA and trial events: approvals in green, recalls and stopped trials in red */
+.item--drug_approval,
+.item--device_approval {
+  border-left-color: var(--pos);
+}
+.item--recall,
+.item--trial_stopped {
+  border-left-color: var(--neg);
+}
+.item--trial_results {
+  border-left-color: var(--c-sector);
+}

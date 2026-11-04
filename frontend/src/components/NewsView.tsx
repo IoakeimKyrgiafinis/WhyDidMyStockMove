@@ -1,4 +1,4 @@
-import { api, type DayDetail, type Filing, type MacroRelease, type WorldNews } from "../api";
+import { api, type DayDetail, type Filing, type HealthEvent, type MacroRelease, type WorldNews } from "../api";
 import { fmtDate, fmtNewYork, money, num, pct, titleCase, useAsync } from "../lib";
 import { HeadlineReactions } from "./HeadlineReactions";
 import { Info } from "./Info";
@@ -16,7 +16,7 @@ export function NewsView({ ticker, date, onBack }: { ticker: string; date: strin
         <div>
           <h1 className="newsview__title">What else happened on {fmtDate(date)}</h1>
           <p className="muted">
-            Economic releases, headlines, company filings and insider trades that became public in time for this session.
+            Economic releases, headlines, world press, company filings, FDA and trial news and insider trades that became public in time for this session.
           </p>
         </div>
       </header>
@@ -33,7 +33,10 @@ export function NewsView({ ticker, date, onBack }: { ticker: string; date: strin
 }
 
 function NewsBody({ day }: { day: DayDetail }) {
-  const { headlines, filings, insiders, macro, world } = day.items;
+  const { headlines, filings, insiders } = day.items;
+  const macro = day.items.macro ?? [];
+  const health = day.items.health ?? [];
+  const world = day.items.world ?? { covered: false, since: null, n_articles: 0, typical: null, stories: [] };
   const announcements = filings.filter((f) => f.category === "current");
   const others = filings.filter((f) => f.category !== "current");
   return (
@@ -74,14 +77,15 @@ function NewsBody({ day }: { day: DayDetail }) {
               </div>
             </section>
           )}
+          {health.length > 0 && <HealthCard events={health} />}
           <section className="card">
             <header className="card__head">
               <h2>Headlines · {headlines.length}</h2>
               <Info label="timing">
                 <p>
                   Items are placed on the first session that could react to them. A headline or filing after the 4pm New
-                  York close counts toward the next day. Insider filings count from the day after they were filed, since
-                  the bulk data has no filing time.
+                  York close counts toward the next day. Insider filings, FDA decisions and trial news count from the day
+                  after their date, since those sources give no time of day.
                 </p>
               </Info>
             </header>
@@ -303,6 +307,38 @@ function WorldPress({ world }: { world: WorldNews }) {
           )}
         </>
       )}
+    </section>
+  );
+}
+
+/** FDA decisions and Phase 3 trial news for health care companies. */
+function HealthCard({ events }: { events: HealthEvent[] }) {
+  return (
+    <section className="card">
+      <header className="card__head">
+        <h2>FDA and clinical trials · {events.length}</h2>
+        <Info label="FDA and clinical trials">
+          <p>
+            New drugs and new uses approved, device approvals and Class I recalls from openFDA, and Phase 3 results or
+            stopped Phase 3 trials from ClinicalTrials.gov. These sources give a date but no time, so each counts from the
+            next session. Companies are matched by name; approvals filed under a subsidiary with a different name are
+            missed.
+          </p>
+        </Info>
+      </header>
+      <div className="newsview__list">
+        {events.map((e) => (
+          <a key={`${e.kind}-${e.url}-${e.date}`} className={`item item--${e.kind}`} href={e.url} target="_blank" rel="noreferrer">
+            <span className="item__kind">{e.label}</span>
+            <span className="item__meta">{fmtDate(e.date)}</span>
+            <span className="item__text">
+              {/* The label already says what kind of event it is; a stopped trial keeps "terminated" or "suspended". */}
+              {e.kind === "trial_stopped" ? e.title : e.title.replace(/^[^:]+:\s*/, "")}
+            </span>
+            {e.detail && <span className="item__text muted small">{e.detail}</span>}
+          </a>
+        ))}
+      </div>
     </section>
   );
 }

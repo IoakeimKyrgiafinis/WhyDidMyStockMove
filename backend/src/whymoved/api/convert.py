@@ -14,6 +14,7 @@ from whymoved.api.schemas import (
     HeadlineGroupOut,
     HeadlineOut,
     HeadlineReactionOut,
+    HealthEventOut,
     InsiderFilingOut,
     MacroReleaseOut,
     PermutationOut,
@@ -25,6 +26,7 @@ from whymoved.api.schemas import (
     WorldNewsOut,
     WorldStoryOut,
 )
+from whymoved.domain.health import KIND_LABELS
 from whymoved.domain.insider_summary import SIGNAL_LABELS
 from whymoved.domain.macro import MACRO_SERIES, SERIES_BY_KEY, fred_url, period_label
 from whymoved.domain.reaction import ReactionSize
@@ -273,3 +275,17 @@ def world(w: WorldDay) -> WorldNewsOut:
             for r in w.stories.to_dict("records")
         ],
     )
+
+
+def health(frame: pd.DataFrame) -> list[HealthEventOut]:
+    return [
+        HealthEventOut(
+            kind=r["kind"],
+            label=KIND_LABELS[str(r["kind"])],
+            date=pd.Timestamp(r["date"]).date(),
+            title=str(r["title"]),
+            detail=str(r["detail"]),
+            url=str(r["url"]),
+        )
+        for r in frame.to_dict("records")
+    ]

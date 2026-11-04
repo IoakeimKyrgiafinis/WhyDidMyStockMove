@@ -75,6 +75,7 @@ class DayItems:
     filings: pd.DataFrame
     insiders: pd.DataFrame
     macro: pd.DataFrame
+    health: pd.DataFrame
 
 
 def _snap(sessions: pd.Series[pd.Timestamp], trading_days: pd.Index) -> pd.Series:
@@ -103,6 +104,7 @@ class Timeline:
         self._trades = snapshot.trades
         self._press_path = snapshot.press_path
         self._macro = snapshot.macro
+        self._health = snapshot.health
         self._world_path = snapshot.world_path
         self._world_since = (
             coverage_start(snapshot.world_path) if snapshot.world_path is not None else None
@@ -228,6 +230,18 @@ class Timeline:
         frame["day"] = _snap(frame["release_date"], self._explainer.prices(ticker).index)
         return frame.dropna(subset=["day"])
 
+    def health(self, ticker: str) -> pd.DataFrame:
+        """FDA and trial events (HEALTH_COLUMNS) for this stock. The sources give a date but no
+        time, so each counts from the next session, like insider filings."""
+        t = self._explainer.member(ticker).ticker
+        return self._explainer.cached(("health", t), lambda: self._health_days(t))
+
+    def _health_days(self, ticker: str) -> pd.DataFrame:
+        frame = self._health[self._health["ticker"] == ticker].copy()
+        sessions = frame["date"] + pd.Timedelta(days=1)
+        frame["day"] = _snap(sessions, self._explainer.prices(ticker).index)
+        return frame.dropna(subset=["day"])
+
     def world_counts(self, ticker: str) -> pd.Series:
         """World press articles per trading day since coverage began (zeros included)."""
         t = self._explainer.member(ticker).ticker
@@ -273,11 +287,13 @@ class Timeline:
         f = self.filings(ticker)
         i = self.insiders(ticker)
         m = self.macro(ticker)
+        e = self.health(ticker)
         return DayItems(
             headlines=h[h["day"] == day],
             filings=f[f["day"] == day],
             insiders=i[i["day"] == day] if not i.empty else i,
             macro=m[m["day"] == day],
+            health=e[e["day"] == day],
         )
 
     # ---- statistics ----

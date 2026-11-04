@@ -186,13 +186,24 @@ export interface WorldNews {
   stories: WorldStory[];
 }
 
+export interface HealthEvent {
+  kind: "drug_approval" | "device_approval" | "recall" | "trial_results" | "trial_stopped";
+  label: string;
+  date: string;
+  title: string;
+  detail: string;
+  url: string;
+}
+
 export interface DayDetail extends Day {
   items: {
     headlines: Headline[];
     filings: Filing[];
     insiders: InsiderFiling[];
-    macro: MacroRelease[];
-    world: WorldNews;
+    // Added later: an API deployed before them leaves them out.
+    macro?: MacroRelease[];
+    world?: WorldNews;
+    health?: HealthEvent[];
   };
 }
 
