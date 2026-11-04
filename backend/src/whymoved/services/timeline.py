@@ -55,6 +55,7 @@ class DayItems:
     headlines: pd.DataFrame
     filings: pd.DataFrame
     insiders: pd.DataFrame
+    macro: pd.DataFrame
 
 
 def _snap(sessions: pd.Series[pd.Timestamp], trading_days: pd.Index) -> pd.Series:
@@ -82,6 +83,7 @@ class Timeline:
         self._events = snapshot.events
         self._trades = snapshot.trades
         self._press_path = snapshot.press_path
+        self._macro = snapshot.macro
         self.pooled: dict[str, object] | None = snapshot.insider_study
 
         # Row positions per ticker. A headline can name several tickers.
@@ -192,14 +194,27 @@ class Timeline:
         filings["day"] = _snap(sessions, self._explainer.prices(ticker).index)
         return filings
 
+    def macro(self, ticker: str) -> pd.DataFrame:
+        """Economic releases (MACRO_COLUMNS) on this stock's trading days. All come out before
+        the close, so each moves its own date's session (or the next one, on a holiday)."""
+        t = self._explainer.member(ticker).ticker
+        return self._explainer.cached(("macro", t), lambda: self._macro_days(t))
+
+    def _macro_days(self, ticker: str) -> pd.DataFrame:
+        frame = self._macro.copy()
+        frame["day"] = _snap(frame["release_date"], self._explainer.prices(ticker).index)
+        return frame.dropna(subset=["day"])
+
     def day_items(self, ticker: str, day: pd.Timestamp) -> DayItems:
         h = self.headlines(ticker)
         f = self.filings(ticker)
         i = self.insiders(ticker)
+        m = self.macro(ticker)
         return DayItems(
             headlines=h[h["day"] == day],
             filings=f[f["day"] == day],
             insiders=i[i["day"] == day] if not i.empty else i,
+            macro=m[m["day"] == day],
         )
 
     # ---- statistics ----

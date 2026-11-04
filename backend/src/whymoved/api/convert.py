@@ -15,6 +15,7 @@ from whymoved.api.schemas import (
     HeadlineOut,
     HeadlineReactionOut,
     InsiderFilingOut,
+    MacroReleaseOut,
     PermutationOut,
     PressReleaseOut,
     ReactionOut,
@@ -23,6 +24,7 @@ from whymoved.api.schemas import (
     WindowOut,
 )
 from whymoved.domain.insider_summary import SIGNAL_LABELS
+from whymoved.domain.macro import MACRO_SERIES, SERIES_BY_KEY, fred_url, period_label
 from whymoved.domain.reaction import ReactionSize
 from whymoved.services.reactions import HeadlineGroup
 from whymoved.services.timeline import StockInsiderStudy
@@ -220,6 +222,32 @@ def headline_groups(groups: list[HeadlineGroup]) -> list[HeadlineGroupOut]:
                 published=g.published,
                 reaction=reaction,
                 error=g.error,
+            )
+        )
+    return out
+
+
+def macro(frame: pd.DataFrame) -> list[MacroReleaseOut]:
+    out: list[MacroReleaseOut] = []
+    order = {s.key: i for i, s in enumerate(MACRO_SERIES)}
+    for r in sorted(frame.to_dict("records"), key=lambda r: order.get(str(r["key"]), 99)):
+        series = SERIES_BY_KEY.get(str(r["key"]))
+        if series is None:
+            continue
+        previous = r["previous"]
+        out.append(
+            MacroReleaseOut(
+                key=series.key,
+                name=series.name,
+                about=series.about,
+                time_et=series.time_et,
+                period=period_label(series, pd.Timestamp(r["period"])),
+                value=float(r["value"]),
+                previous=None if previous is None or pd.isna(previous) else float(previous),
+                unit=series.unit,
+                decimals=series.decimals,
+                signed=series.units != "lin",
+                url=fred_url(series),
             )
         )
     return out

@@ -28,6 +28,7 @@ jobs:
       WHYMOVED_ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
       WHYMOVED_ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
       WHYMOVED_SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      WHYMOVED_FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
       # Consolidated (SIP) daily history: the free plan serves it for past days, and the IEX
       # feed has no data before mid-2020 and gaps in thinly traded stocks.
       WHYMOVED_ALPACA_FEED: sip
@@ -75,6 +76,11 @@ jobs:
         # Capped per run: the two-year history fills in over a few nights, newest first.
         run: python -m whymoved.jobs.collect_press --max-filings 10000 --max-minutes 60
 
+      - name: Economic calendar
+        id: macro
+        continue-on-error: true
+        run: python -m whymoved.jobs.collect_macro
+
       - name: Pooled insider study
         id: study
         if: steps.insider.outcome == 'success' || steps.filings.outcome == 'success'
@@ -89,7 +95,7 @@ jobs:
           gh release upload data-latest data/* --clobber
 
       - name: Fail the run if a collector failed
-        if: steps.news.outcome == 'failure' || steps.insider.outcome == 'failure' || steps.filings.outcome == 'failure' || steps.press.outcome == 'failure' || steps.study.outcome == 'failure'
+        if: steps.news.outcome == 'failure' || steps.insider.outcome == 'failure' || steps.filings.outcome == 'failure' || steps.press.outcome == 'failure' || steps.macro.outcome == 'failure' || steps.study.outcome == 'failure'
         run: |
           echo "A collector failed. The snapshot was still published with the data that succeeded."
           exit 1

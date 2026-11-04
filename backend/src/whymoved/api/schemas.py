@@ -192,10 +192,25 @@ class InsiderFilingOut(BaseModel):
     url: str
 
 
+class MacroReleaseOut(BaseModel):
+    key: str
+    name: str
+    about: str
+    time_et: str
+    period: str
+    value: float
+    previous: float | None
+    unit: str
+    decimals: int
+    signed: bool  # a change, shown with + or -
+    url: str
+
+
 class DayItemsOut(BaseModel):
     headlines: list[HeadlineOut]
     filings: list[FilingOut]
     insiders: list[InsiderFilingOut]
+    macro: list[MacroReleaseOut]
 
 
 class DayDetailResponse(DayResponse):

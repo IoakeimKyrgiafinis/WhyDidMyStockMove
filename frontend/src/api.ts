@@ -155,8 +155,22 @@ export interface InsiderFiling {
   url: string;
 }
 
+export interface MacroRelease {
+  key: string;
+  name: string;
+  about: string;
+  time_et: string;
+  period: string;
+  value: number;
+  previous: number | null;
+  unit: string;
+  decimals: number;
+  signed: boolean;
+  url: string;
+}
+
 export interface DayDetail extends Day {
-  items: { headlines: Headline[]; filings: Filing[]; insiders: InsiderFiling[] };
+  items: { headlines: Headline[]; filings: Filing[]; insiders: InsiderFiling[]; macro: MacroRelease[] };
 }
 
 export interface Marker {

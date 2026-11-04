@@ -89,3 +89,15 @@ class IntradayProvider(Protocol):
     """Source of intraday bar closes (wide frame, naive UTC bar-start index)."""
 
     def bars(self, symbols: Sequence[str], start: datetime, end: datetime) -> pd.DataFrame: ...
+
+
+class MacroProvider(Protocol):
+    """First-published economic figures and release dates (FRED)."""
+
+    def initial_releases(
+        self, series_id: str, units: str, start: date
+    ) -> list[tuple[pd.Timestamp, pd.Timestamp, float]]: ...
+
+    def observations(self, series_id: str, start: date) -> pd.Series: ...
+
+    def release_dates(self, release_id: int, start: date) -> list[pd.Timestamp]: ...

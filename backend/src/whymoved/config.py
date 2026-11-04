@@ -66,6 +66,15 @@ class JobSettings(BaseSettings):
         return value.strip()
 
 
+class MacroSettings(BaseSettings):
+    """Settings for the economic calendar job: only a FRED key (free, from
+    fred.stlouisfed.org/docs/api/api_key.html)."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="WHYMOVED_", extra="ignore")
+
+    fred_api_key: SecretStr
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()

@@ -1577,3 +1577,37 @@ line.grid {
 .item--minor:hover {
   opacity: 1;
 }
+
+/* Economic releases in the news view */
+.macro {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--c-market);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.85rem;
+  transition: border-color 120ms;
+}
+.macro:hover {
+  border-color: var(--accent-line);
+  border-left-color: var(--c-market);
+}
+.macro__name {
+  font-weight: 600;
+  color: var(--ink);
+}
+.macro__value {
+  font-weight: 600;
+  color: var(--ink);
+  text-align: right;
+}
+.macro__meta {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.78rem;
+}

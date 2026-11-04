@@ -132,13 +132,14 @@ function DayBody({ day, onNews }: { day: DayDetail; onNews: () => void }) {
 
 /** A count of the day's items, and the way into the news view where they are laid out in full. */
 function NewsButton({ day, onNews }: { day: DayDetail; onNews: () => void }) {
-  const { headlines, filings, insiders } = day.items;
+  const { headlines, filings, insiders, macro } = day.items;
   const counts = [
     [headlines.length, "headline"],
     [filings.length, "filing"],
     [insiders.length, "insider trade"],
+    [macro.length, "economic release"],
   ] as const;
-  const total = headlines.length + filings.length + insiders.length;
+  const total = counts.reduce((sum, [n]) => sum + n, 0);
   return (
     <div className="dayitems">
       <button type="button" className="newsbutton" onClick={onNews}>

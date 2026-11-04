@@ -18,11 +18,13 @@ import pyarrow.parquet as pq
 from whymoved.adapters.filings_store import EVENTS_FILE
 from whymoved.adapters.http_policy import RetryPolicy
 from whymoved.adapters.insider_store import SIGNAL_KINDS, SIGNALS_FILE, TRADES_FILE
+from whymoved.adapters.macro_store import MACRO_FILE
 from whymoved.adapters.news_store import NEWS_FILE
 from whymoved.adapters.parquet_store import CLOSE_FILE
 from whymoved.adapters.press_store import PRESS_FILE
 from whymoved.domain.corporate_events import empty_events, normalize_events
 from whymoved.domain.insider import empty_trades
+from whymoved.domain.macro import empty_macro, normalize_macro
 from whymoved.domain.universe import UniverseMember
 from whymoved.memory import release_memory
 
@@ -32,7 +34,14 @@ UNIVERSE_FILE = "universe.json"
 INSIDER_STUDY_FILE = "insider_study.json"
 REQUIRED_FILES = (CLOSE_FILE, UNIVERSE_FILE)  # the API never reads volumes
 # Produced by collectors that may fail on a given night; the site works without them.
-OPTIONAL_FILES = (NEWS_FILE, EVENTS_FILE, SIGNALS_FILE, INSIDER_STUDY_FILE, PRESS_FILE)
+OPTIONAL_FILES = (
+    NEWS_FILE,
+    EVENTS_FILE,
+    SIGNALS_FILE,
+    INSIDER_STUDY_FILE,
+    PRESS_FILE,
+    MACRO_FILE,
+)
 NEWS_COLUMNS = ["headline", "source", "url", "created_at", "symbols"]
 NEWS_DAYS = 400
 BATCH_ROWS = 50_000
@@ -92,6 +101,7 @@ class Snapshot:
     insider_study: dict[str, object] | None = None
     # Press releases stay on disk: the timeline reads one stock's rows at a time.
     press_path: Path | None = None
+    macro: pd.DataFrame = field(default_factory=empty_macro)
 
 
 def load_snapshot(directory: Path) -> Snapshot:
@@ -145,6 +155,9 @@ def load_snapshot(directory: Path) -> Snapshot:
         trades=trades,
         insider_study=_optional(directory / INSIDER_STUDY_FILE, _read_json, None),
         press_path=directory / PRESS_FILE if (directory / PRESS_FILE).exists() else None,
+        macro=_optional(
+            directory / MACRO_FILE, lambda p: normalize_macro(pd.read_parquet(p)), empty_macro()
+        ),
     )
 
 

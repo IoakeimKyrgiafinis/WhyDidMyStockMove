@@ -1,4 +1,4 @@
-import { api, type DayDetail, type Filing } from "../api";
+import { api, type DayDetail, type Filing, type MacroRelease } from "../api";
 import { fmtDate, fmtNewYork, money, num, pct, titleCase, useAsync } from "../lib";
 import { HeadlineReactions } from "./HeadlineReactions";
 import { Info } from "./Info";
@@ -16,7 +16,7 @@ export function NewsView({ ticker, date, onBack }: { ticker: string; date: strin
         <div>
           <h1 className="newsview__title">What else happened on {fmtDate(date)}</h1>
           <p className="muted">
-            Headlines, company filings and insider trades that became public in time for this session.
+            Economic releases, headlines, company filings and insider trades that became public in time for this session.
           </p>
         </div>
       </header>
@@ -33,7 +33,7 @@ export function NewsView({ ticker, date, onBack }: { ticker: string; date: strin
 }
 
 function NewsBody({ day }: { day: DayDetail }) {
-  const { headlines, filings, insiders } = day.items;
+  const { headlines, filings, insiders, macro } = day.items;
   const announcements = filings.filter((f) => f.category === "current");
   const others = filings.filter((f) => f.category !== "current");
   return (
@@ -96,6 +96,7 @@ function NewsBody({ day }: { day: DayDetail }) {
         </div>
 
         <div className="newsview__side">
+          {macro.length > 0 && <Economy releases={macro} market={day.market} />}
           <section className="card">
             <header className="card__head">
               <h2>Other SEC filings · {others.length}</h2>
@@ -192,5 +193,61 @@ function FiledAt({ filing: f }: { filing: Filing }) {
     <span className="item__meta">
       filed {fmtNewYork(f.accepted_at)}
     </span>
+  );
+}
+
+/** A FRED value as shown: "+0.4%", "+142k jobs", "231k", "7.23M". */
+function macroValue(r: MacroRelease, v: number): string {
+  const sign = r.signed && v > 0 ? "+" : "";
+  const text = `${sign}${v.toFixed(r.decimals)}`;
+  return r.unit === "%" || r.unit === "k" || r.unit === "M" ? `${text}${r.unit}` : `${text} ${r.unit}`;
+}
+
+function fedRange(upper: number): string {
+  return `${(upper - 0.25).toFixed(2)}–${upper.toFixed(2)}%`;
+}
+
+function fedChange(r: MacroRelease): string {
+  if (r.previous === null) return "";
+  const bp = Math.round((r.value - r.previous) * 100);
+  if (bp === 0) return "held";
+  return bp < 0 ? `cut by ${-bp} bp` : `raised by ${bp} bp`;
+}
+
+function releaseTime(t: string): string {
+  const [hh, mm] = t.split(":").map(Number);
+  return `${((hh + 11) % 12) + 1}:${String(mm).padStart(2, "0")} ${hh >= 12 ? "PM" : "AM"} ET`;
+}
+
+/** Releases that move the whole market: they show up in the market part of the move. */
+function Economy({ releases, market }: { releases: MacroRelease[]; market: number }) {
+  return (
+    <section className="card">
+      <header className="card__head">
+        <h2>The economy that day · {releases.length}</h2>
+        <Info label="economic releases">
+          <p>
+            Figures as first published, before later revisions, from FRED (St. Louis Fed). They move the whole market,
+            so their effect shows up in the market part of the move ({pct(market)} for this stock today), not in the
+            unexplained part.
+          </p>
+        </Info>
+      </header>
+      <div className="newsview__list">
+        {releases.map((r) => (
+          <a key={r.key} className="macro" href={r.url} target="_blank" rel="noreferrer" title={r.about}>
+            <span className="macro__name">{r.name}</span>
+            <span className="macro__value num">
+              {r.key === "fomc" ? fedRange(r.value) : macroValue(r, r.value)}
+            </span>
+            <span className="macro__meta">
+              {r.key === "fomc"
+                ? `${fedChange(r)} · ${releaseTime(r.time_et)}`
+                : `${r.period}${r.previous !== null ? ` · before ${macroValue(r, r.previous)}` : ""} · ${releaseTime(r.time_et)}`}
+            </span>
+          </a>
+        ))}
+      </div>
+    </section>
   );
 }

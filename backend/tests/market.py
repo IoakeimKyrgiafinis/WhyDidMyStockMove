@@ -12,12 +12,14 @@ import pandas as pd
 
 from whymoved.adapters.filings_store import ParquetEventStore
 from whymoved.adapters.insider_store import ParquetTradeStore
+from whymoved.adapters.macro_store import ParquetMacroStore
 from whymoved.adapters.news_store import NEWS_FILE
 from whymoved.adapters.parquet_store import ParquetPriceStore
 from whymoved.adapters.snapshot import Snapshot
 from whymoved.domain.bars import DailyBars
 from whymoved.domain.corporate_events import EVENT_COLUMNS, normalize_events
 from whymoved.domain.insider import TRADE_COLUMNS, normalize_trades
+from whymoved.domain.macro import MACRO_COLUMNS, normalize_macro
 from whymoved.domain.universe import MARKET_ETF, SECTOR_ETF_TICKERS, UniverseMember
 
 BETA_MARKET = 1.2
@@ -88,6 +90,7 @@ def make_market(n_days: int = 700, seed: int = 11, *, with_events: bool = False)
             "news": _news(index),
             "events": _events(index),
             "trades": _trades(index),
+            "macro": _macro(index),
         }
     snapshot = Snapshot(
         close=close,
@@ -114,6 +117,25 @@ def _news(index: pd.DatetimeIndex) -> pd.DataFrame:
             "created_at": pd.to_datetime([during, after]),
             "symbols": ["AAA", "AAA,BBB"],
         }
+    )
+
+
+MACRO_DAY = NEWS_DAY + 2
+
+
+def _macro(index: pd.DatetimeIndex) -> pd.DataFrame:
+    """A CPI release on a trading day and a jobs report on the Saturday before (snaps to the
+    Monday after)."""
+    released = pd.Timestamp(index[MACRO_DAY])
+    saturday = released - pd.Timedelta(days=released.dayofweek + 2)
+    return normalize_macro(
+        pd.DataFrame(
+            [
+                [released, "cpi", released.replace(day=1), 0.4, 0.2],
+                [saturday, "payrolls", saturday.replace(day=1), 150.0, None],
+            ],
+            columns=MACRO_COLUMNS,
+        )
     )
 
 
@@ -215,6 +237,8 @@ def write_snapshot(directory: Path, market: Market) -> None:
         ParquetEventStore(directory).save(snap.events)
     if len(snap.trades):
         ParquetTradeStore(directory).save(snap.trades)
+    if len(snap.macro):
+        ParquetMacroStore(directory).save(snap.macro)
 
 
 def shock_date(market: Market) -> date:

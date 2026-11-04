@@ -11,7 +11,9 @@ from market import (
     BUY_DAYS,
     EARNINGS_DAYS,
     INTRADAY_8K_DAY,
+    MACRO_DAY,
     NEWS_DAY,
+    Market,
     day_at,
     make_market,
     write_snapshot,
@@ -258,3 +260,30 @@ def test_other_filings_are_labelled_and_press_releases_attached(market, tmp_path
     assert markers[str(day.date())]["filings"] == 2  # the routine 13G gets no marker
     assert earnings["press_title"] == "Beta Reports Results"
     assert earnings["press_url"] == "https://x/ex.htm"
+
+
+def test_economic_releases_land_on_trading_days(
+    market: Market, explainer: MoveExplainer, client: TestClient
+) -> None:
+    m = explainer.timeline.macro("AAA")
+    by_key = {str(k): pd.Timestamp(d) for k, d in zip(m["key"], m["day"], strict=True)}
+    released = pd.Timestamp(day_at(market, MACRO_DAY))
+    assert by_key["cpi"] == released
+    # The Saturday release counts on the next trading day.
+    saturday = released - pd.Timedelta(days=released.dayofweek + 2)
+    index = market.close.index
+    assert by_key["payrolls"] == index[index >= saturday][0]
+
+    body = client.get(f"/api/v1/stocks/AAA/days/{released.date().isoformat()}").json()
+    cpi = [r for r in body["items"]["macro"] if r["key"] == "cpi"]
+    assert cpi[0]["value"] == pytest.approx(0.4)
+    assert cpi[0]["previous"] == pytest.approx(0.2)
+    assert cpi[0]["time_et"] == "08:30"
+
+
+def test_the_economic_calendar_loads_from_the_snapshot(tmp_path: Path, market: Market) -> None:
+    write_snapshot(tmp_path, market)
+
+    snapshot = load_snapshot(tmp_path)
+
+    assert sorted(snapshot.macro["key"]) == ["cpi", "payrolls"]

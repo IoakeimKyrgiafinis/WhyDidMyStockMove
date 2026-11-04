@@ -14,7 +14,7 @@ It is descriptive, not predictive, and it is not investment advice.
 | Day by day | Every day's split; click a day to explain it | Out-of-sample decomposition, Newey-West error bands |
 | Was it unusual? | How surprising the unexplained part was | EWMA-scaled score, empirical tail probability next to the normal one, expected false alarms |
 | Model health | How much of the stock is just the market | Block-bootstrap variance shares, R², beta stability, Ljung-Box, Jarque-Bera, ARCH |
-| What else happened | Headlines, company press releases, 8-Ks and other SEC filings (stakes, offerings, tender offers) and insider trades on the day they could first move the price | New York session timing with no look-ahead |
+| What else happened | Economic releases (Fed decisions, inflation, jobs, GDP), headlines, company press releases, 8-Ks and other SEC filings (stakes, offerings, tender offers) and insider trades on the day they could first move the price | New York session timing with no look-ahead |
 | Headline reactions | The move beyond expected in the 30 minutes after a headline, and before it | 5-minute factor model, time-of-day volatility, empirical percentile |
 | Earnings days | How much bigger results days are than ordinary days | Permutation test on absolute scores |
 | Insider trades | Purchases, sales and pre-planned sales from SEC Form 4 | Event study from the filing date, permutation test, pooled study clustered by date |
@@ -32,6 +32,7 @@ GitHub Actions (nightly)                          Render (API)                 V
   headlines   Alpaca news          ─┤  snapshot    download at startup,
   insiders    SEC Form 4 data sets ─┼─► GitHub  ─► refresh every 6 h,   ◄──── React + TypeScript
   filings     SEC EDGAR 8-K/Form 4 ─┤  release     compute per request         (Vite)
+  economy     FRED releases        ─┤
   study       pooled insider study ─┘              (FastAPI)
                                                        │ on demand
                                                        └─► Alpaca 5-minute bars (headline reactions)
@@ -39,7 +40,7 @@ GitHub Actions (nightly)                          Render (API)                 V
 
 - `backend/src/whymoved/domain`: the statistics, pure functions with no I/O.
 - `backend/src/whymoved/services`: orchestration (decomposition, timeline, reactions, peers).
-- `backend/src/whymoved/adapters`: Alpaca, SEC EDGAR, parquet storage, snapshot download.
+- `backend/src/whymoved/adapters`: Alpaca, SEC EDGAR, FRED, parquet storage, snapshot download.
 - `backend/src/whymoved/api`: FastAPI under `/api/v1`, one error format, Server-Sent Events for
   the peer grid and replay, request IDs, JSON logs, cache headers.
 - `backend/src/whymoved/jobs`: the nightly collectors and the pooled insider study.
@@ -55,6 +56,7 @@ tests check that each is recovered, and that changing the future never changes t
 |---|---|---|
 | Alpaca market data (free plan, IEX feed) | Daily and 5-minute prices, headlines | Headlines are shown as title, source and link only |
 | SEC EDGAR | Form 4 insider trades, 8-K press releases, 13D/13G, offerings, tender offers, periodic reports | Public data; requests identify you and stay under 10 per second |
+| FRED (St. Louis Fed) | Economic calendar: Fed rate decisions, CPI, PPI, PCE, jobs report, jobless claims, retail sales, GDP, job openings | Free key; figures as first published |
 | iShares IWV holdings | The universe (Russell 3000) and sectors | Dated snapshot in `backend/universe/` |
 | Select Sector SPDR ETFs | Sector factors | XLK, XLF, XLV, XLY, XLP, XLI, XLE, XLB, XLU, XLRE, XLC |
 
@@ -72,7 +74,7 @@ uvicorn whymoved.main:app --reload
 ```
 
 The API reads the snapshot from `backend/data/`. Either run the nightly jobs once
-(`python -m whymoved.jobs.nightly`, then `collect_news`, `collect_insider`, `collect_filings`,
+(`python -m whymoved.jobs.nightly`, then `collect_news`, `collect_insider`, `collect_filings`, `collect_press`, `collect_macro`,
 `insider_study`), or set `WHYMOVED_SNAPSHOT_URL` to your release (see below) to download it.
 
 Frontend (Node 22+):
@@ -98,7 +100,7 @@ npm run lint && npm run build
 ## Deploy checklist
 
 1. **GitHub repository secrets** (Settings → Secrets and variables → Actions → Repository
-   secrets): `ALPACA_KEY_ID`, `ALPACA_SECRET_KEY`, `SEC_USER_AGENT` (your name and email).
+   secrets): `ALPACA_KEY_ID`, `ALPACA_SECRET_KEY`, `SEC_USER_AGENT` (your name and email), `FRED_API_KEY` (free, for the economic calendar).
 2. **Run the data workflow** once from the Actions tab. It publishes the snapshot to a release
    called `data-latest`, and then runs every weeknight. GitHub pauses scheduled workflows after
    about 60 days without repository activity, so commit or run it manually now and then.

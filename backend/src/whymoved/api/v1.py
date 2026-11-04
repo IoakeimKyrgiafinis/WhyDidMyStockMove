@@ -188,6 +188,7 @@ def day(ticker: str, day: date, explainer: Explainer) -> DayDetailResponse:
             headlines=convert.headlines(items.headlines),
             filings=convert.filings(items.filings),
             insiders=convert.insider_filings(items.insiders),
+            macro=convert.macro(items.macro),
         ),
     )
 
