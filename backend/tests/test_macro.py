@@ -24,10 +24,12 @@ from whymoved.domain.macro import (
     FOMC,
     SERIES_BY_KEY,
     empty_macro,
+    fomc_meetings,
     fomc_rows,
     initial_rows,
     normalize_macro,
     period_label,
+    release_changes,
 )
 from whymoved.services.macro import collect_macro as collect
 from whymoved.services.macro import merge_macro
@@ -199,14 +201,42 @@ def test_fred_initial_releases() -> None:
         },
         seen,
     )
-    rows = client.initial_releases("CPIAUCSL", "pch", date(2024, 9, 1))
+    rows = client.initial_releases("UNRATE", date(2024, 9, 1))
     assert rows == [(T("2026-09-11"), T("2026-08-01"), 0.4)]
     params = seen[0].url.params
-    assert params["output_type"] == "4" and params["units"] == "pch"
+    assert params["output_type"] == "4" and "units" not in params
     assert params["api_key"] == "k" and params["file_type"] == "json"
 
 
-def test_fred_observations_and_release_dates() -> None:
+def test_fred_vintages_one_entry_per_publication_day() -> None:
+    seen: list[httpx.Request] = []
+    client = fred(
+        {
+            "series/observations": {
+                "observations": [
+                    {
+                        "date": "2026-06-01",
+                        "PAYEMS_20260703": "158800",
+                        "PAYEMS_20260807": "158881",
+                    },
+                    {"date": "2026-07-01", "PAYEMS_20260703": ".", "PAYEMS_20260807": "158858"},
+                    {"date": "bad", "PAYEMS_20260807": "1"},
+                    {"date": "2026-05-01", "PAYEMS_bad": "1", "OTHER_20260807": "1"},
+                ]
+            }
+        },
+        seen,
+    )
+    vintages = client.vintages("PAYEMS", date(2026, 7, 1))
+    assert vintages == [
+        (T("2026-07-03"), {T("2026-06-01"): 158800.0}),
+        (T("2026-08-07"), {T("2026-06-01"): 158881.0, T("2026-07-01"): 158858.0}),
+    ]
+    params = seen[0].url.params
+    assert params["output_type"] == "2" and params["observation_start"] < "2026-07-01"
+
+
+def test_fred_observations() -> None:
     seen: list[httpx.Request] = []
     client = fred(
         {
@@ -217,28 +247,91 @@ def test_fred_observations_and_release_dates() -> None:
                     {"date": "2026-09-18", "value": "."},
                 ]
             },
-            "release/dates": {
-                "release_dates": [
-                    {"release_id": 101, "date": "2026-09-16"},
-                    {"release_id": 101, "date": "2026-09-16"},
-                    {"release_id": 101, "date": "bad"},
-                    {"release_id": 101, "date": "2026-07-29"},
-                ]
-            },
         },
         seen,
     )
     upper = client.observations("DFEDTARU", date(2026, 1, 1))
     assert upper.index.tolist() == [T("2026-09-16"), T("2026-09-17")]
-    assert client.release_dates(101, date(2026, 1, 1)) == [T("2026-07-29"), T("2026-09-16")]
 
 
 def test_fred_unexpected_shapes_are_errors() -> None:
-    client = fred({"series/observations": [], "release/dates": {}}, [])
+    client = fred({"series/observations": []}, [])
     with pytest.raises(SourceError):
         client.observations("X", date(2026, 1, 1))
     with pytest.raises(SourceError):
-        client.release_dates(101, date(2026, 1, 1))
+        client.vintages("X", date(2026, 1, 1))
+
+
+def test_fomc_meetings_are_the_schedule_plus_unscheduled_moves() -> None:
+    upper = pd.Series(
+        [5.5, 5.5, 5.0, 5.0, 4.75],
+        index=[T("2026-03-01"), T("2026-03-02"), T("2026-03-16"), T("2026-09-16"), T("2026-09-17")],
+    )
+    meetings = fomc_meetings(upper)
+    assert T("2026-03-15") in meetings  # a Sunday cut, effective the Monday
+    assert T("2026-09-16") in meetings and meetings.count(T("2026-09-16")) == 1
+    assert T("2026-01-28") in meetings  # scheduled hold
+    assert meetings == sorted(meetings)
+    rows = fomc_rows(meetings, upper, until=T("2026-12-31"))
+    assert {(r["release_date"], r["value"], r["previous"]) for r in rows} >= {
+        (T("2026-03-15"), 5.0, 5.5),
+        (T("2026-09-16"), 4.75, 5.0),
+    }
+
+
+# ---- changes from release-day vintages ----
+
+
+def _vintages() -> list[tuple[pd.Timestamp, dict[pd.Timestamp, float]]]:
+    return [
+        (T("2026-07-03"), {T("2026-05-01"): 158700.0, T("2026-06-01"): 158800.0}),
+        # 7 Aug: July added and June revised; the release reports July against revised June.
+        (
+            T("2026-08-07"),
+            {T("2026-05-01"): 158700.0, T("2026-06-01"): 158881.0, T("2026-07-01"): 158858.0},
+        ),
+        # A revision-only day is not a release.
+        (
+            T("2026-08-20"),
+            {T("2026-05-01"): 158690.0, T("2026-06-01"): 158881.0, T("2026-07-01"): 158858.0},
+        ),
+        (
+            T("2026-09-04"),
+            {
+                T("2026-05-01"): 158690.0,
+                T("2026-06-01"): 158881.0,
+                T("2026-07-01"): 158870.0,
+                T("2026-08-01"): 159012.0,
+            },
+        ),
+    ]
+
+
+def test_release_changes_use_the_release_days_own_figures() -> None:
+    changes = release_changes(SERIES_BY_KEY["payrolls"], _vintages(), date(2026, 7, 1))
+    assert changes == [
+        (T("2026-08-07"), T("2026-07-01"), -23.0),
+        (T("2026-09-04"), T("2026-08-01"), 142.0),
+    ]
+    rows = initial_rows(SERIES_BY_KEY["payrolls"], changes)
+    assert [(r["value"], r["previous"]) for r in rows] == [(-23.0, None), (142.0, -23.0)]
+
+
+def test_release_changes_percent_and_edges() -> None:
+    cpi = SERIES_BY_KEY["cpi"]
+    vintages = [
+        (T("2026-09-11"), {T("2026-07-01"): 0.0}),
+        (T("2026-10-15"), {T("2026-07-01"): 0.0, T("2026-08-01"): 100.0}),  # prior is zero
+        (T("2026-11-13"), {T("2026-07-01"): 0.0, T("2026-08-01"): 100.0, T("2026-09-01"): 100.3}),
+    ]
+    [(day, period, change)] = release_changes(cpi, vintages, date(2026, 9, 1))
+    assert (day, period) == (T("2026-11-13"), T("2026-09-01"))
+    assert change == pytest.approx(0.3)
+    # Before the window, or with nothing earlier to compare with, there is no release.
+    assert release_changes(cpi, vintages, date(2026, 12, 1)) == []
+    lone = [(T("2026-09-01"), {}), (T("2026-09-11"), {T("2026-08-01"): 100.0})]
+    assert release_changes(cpi, lone, date(2026, 9, 1)) == []
+    assert release_changes(cpi, [], date(2026, 9, 1)) == []
 
 
 # ---- service and job ----
@@ -255,19 +348,30 @@ class FakeFred:
         return None
 
     def initial_releases(
-        self, series_id: str, units: str, start: date
+        self, series_id: str, start: date
     ) -> list[tuple[pd.Timestamp, pd.Timestamp, float]]:
         if series_id in self.failing or "*" in self.failing:
             raise SourceUnavailable("down")
-        return [(T("2026-10-15"), T("2026-09-01"), 0.3), (T("2026-09-11"), T("2026-08-01"), 0.2)]
+        return [(T("2026-10-15"), T("2026-09-01"), 4.3), (T("2026-09-11"), T("2026-08-01"), 4.2)]
+
+    def vintages(
+        self, series_id: str, start: date
+    ) -> list[tuple[pd.Timestamp, dict[pd.Timestamp, float]]]:
+        if series_id in self.failing or "*" in self.failing:
+            raise SourceUnavailable("down")
+        return [
+            (T("2026-08-01"), {T("2026-07-01"): 100.0}),
+            (T("2026-09-11"), {T("2026-07-01"): 100.0, T("2026-08-01"): 100.2}),
+            (
+                T("2026-10-15"),
+                {T("2026-07-01"): 100.0, T("2026-08-01"): 100.1, T("2026-09-01"): 100.4},
+            ),
+        ]
 
     def observations(self, series_id: str, start: date) -> pd.Series:
         if "*" in self.failing:
             raise SourceUnavailable("down")
         return pd.Series([5.5, 5.25], index=[T("2026-09-16"), T("2026-09-17")])
-
-    def release_dates(self, release_id: int, start: date) -> list[pd.Timestamp]:
-        return [T("2026-09-16")]
 
 
 def test_collect_reads_every_series_and_survives_one_failing() -> None:

@@ -1,4 +1,4 @@
-"""The FRED API of the St. Louis Fed: release dates and first-published values.
+"""The FRED API of the St. Louis Fed: first-published values and release-day vintages.
 
 A free key is required (fred.stlouisfed.org/docs/api/api_key.html). The limit is 120 requests a
 minute; a nightly run makes about a dozen.
@@ -7,7 +7,7 @@ minute; a nightly run makes about a dozen.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date
+from datetime import date, timedelta
 
 import httpx
 import pandas as pd
@@ -18,6 +18,8 @@ BASE_URL = "https://api.stlouisfed.org/fred/"
 MIN_INTERVAL = 0.6
 TIMEOUT = 30.0
 INITIAL_RELEASE = "4"  # output_type: each observation as first published, with that date
+BY_VINTAGE = "2"  # output_type: one column per day the series was published
+VINTAGE_LOOKBACK_DAYS = 200
 
 
 def _observations(payload: object) -> list[Mapping[str, object]]:
@@ -53,14 +55,17 @@ class FredClient:
         )
 
     def initial_releases(
-        self, series_id: str, units: str, start: date
+        self, series_id: str, start: date
     ) -> list[tuple[pd.Timestamp, pd.Timestamp, float]]:
-        """(first published, period, value) for each observation of a series from `start`."""
+        """(first published, period, value) for each observation of a series from `start`.
+
+        FRED serves first releases only as levels ("units must be 'lin'"); changes come from
+        `vintages`.
+        """
         payload = self._get(
             "series/observations",
             {
                 "series_id": series_id,
-                "units": units,
                 "output_type": INITIAL_RELEASE,
                 "realtime_start": start.isoformat(),
                 "realtime_end": "9999-12-31",
@@ -82,6 +87,42 @@ class FredClient:
             out.append((released, period, value))
         return out
 
+    def vintages(
+        self, series_id: str, start: date
+    ) -> list[tuple[pd.Timestamp, dict[pd.Timestamp, float]]]:
+        """The series as published on each day it changed from `start` on: (publication day,
+        {period: value}), oldest first. The first entry is the series as it stood on `start`."""
+        payload = self._get(
+            "series/observations",
+            {
+                "series_id": series_id,
+                "output_type": BY_VINTAGE,
+                "realtime_start": start.isoformat(),
+                "realtime_end": "9999-12-31",
+                # Months before the window, so the first release has a period to compare with.
+                "observation_start": (start - timedelta(days=VINTAGE_LOOKBACK_DAYS)).isoformat(),
+            },
+        )
+        prefix = f"{series_id}_"
+        by_day: dict[pd.Timestamp, dict[pd.Timestamp, float]] = {}
+        for o in _observations(payload):
+            try:
+                period = pd.Timestamp(str(o["date"]))
+            except (KeyError, ValueError):
+                continue
+            for key, raw in o.items():
+                if not key.startswith(prefix):
+                    continue
+                value = _number(raw)
+                try:
+                    day = pd.Timestamp(key[len(prefix) :])
+                except ValueError:
+                    continue
+                values = by_day.setdefault(day, {})
+                if value is not None:
+                    values[period] = value
+        return sorted(by_day.items(), key=lambda item: item[0])
+
     def observations(self, series_id: str, start: date) -> pd.Series:
         """The current values of a series from `start`, by date."""
         payload = self._get(
@@ -93,29 +134,6 @@ class FredClient:
             if value is not None and isinstance(o.get("date"), str):
                 values[pd.Timestamp(str(o["date"]))] = value
         return pd.Series(values, dtype="float64").sort_index()
-
-    def release_dates(self, release_id: int, start: date) -> list[pd.Timestamp]:
-        """Every date a release was (or is scheduled to be) published from `start`."""
-        payload = self._get(
-            "release/dates",
-            {
-                "release_id": str(release_id),
-                "realtime_start": start.isoformat(),
-                "realtime_end": "9999-12-31",
-                "include_release_dates_with_no_data": "true",
-                "limit": "10000",
-            },
-        )
-        if not isinstance(payload, dict) or not isinstance(payload.get("release_dates"), list):
-            raise SourceError("FRED: unexpected release dates response")
-        out: list[pd.Timestamp] = []
-        for r in payload["release_dates"]:
-            if isinstance(r, dict) and isinstance(r.get("date"), str):
-                try:
-                    out.append(pd.Timestamp(r["date"]))
-                except ValueError:
-                    continue
-        return sorted(set(out))
 
 
 def fred_client(api_key: str) -> FredClient:

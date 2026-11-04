@@ -1,14 +1,16 @@
 """The economic releases that move the whole market, and how each is shown.
 
-Every value is the figure as first published (FRED's "initial release only" view): what traders
-saw that morning, not the number after later revisions. Release times are the agencies' fixed
-schedule in New York time; all of them come before the 16:00 close, so a release moves the
-session of its own date.
+Every value is the figure as first published: what traders saw that morning, not the number
+after later revisions. Levels come from FRED's "initial release only" view; changes (CPI,
+payrolls) are computed from the series as it was published on the release day. Release times
+are the agencies' fixed schedule in New York time; all of them come before the 16:00 close, so
+a release moves the session of its own date.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Literal
 
 import pandas as pd
@@ -34,7 +36,18 @@ class MacroSeries:
 
 
 FOMC = "fomc"
-FOMC_RELEASE_ID = 101  # FRED release "FOMC Press Release"
+# Decision days (the second day of each meeting), from the Fed's published calendar
+# (federalreserve.gov/monetarypolicy/fomccalendars.htm). The schedule is set a year ahead; add the
+# next year's dates when it comes out. FRED has no meeting list of its own (its "FOMC Press
+# Release" is dated every day), and moves between meetings are found from the rate itself.
+FOMC_MEETINGS: tuple[str, ...] = (
+    "2024-01-31", "2024-03-20", "2024-05-01", "2024-06-12",
+    "2024-07-31", "2024-09-18", "2024-11-07", "2024-12-18",
+    "2025-01-29", "2025-03-19", "2025-05-07", "2025-06-18",
+    "2025-07-30", "2025-09-17", "2025-10-29", "2025-12-10",
+    "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17",
+    "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
+)  # fmt: skip
 FED_TARGET_UPPER = "DFEDTARU"
 FED_RANGE_WIDTH = 0.25  # the target range has been a quarter point wide since 2008
 
@@ -211,6 +224,49 @@ def initial_rows(
         )
         previous = value * series.scale
     return rows
+
+
+def release_changes(
+    series: MacroSeries,
+    vintages: list[tuple[pd.Timestamp, dict[pd.Timestamp, float]]],
+    start: date,
+) -> list[tuple[pd.Timestamp, pd.Timestamp, float]]:
+    """(published, period, change) for each release of a change series.
+
+    A release is a publication day that adds a new period. Its change is computed from that
+    day's own figures, the new period against the one before it as published the same day,
+    which is the number the release reported ("payrolls rose 142,000"). Days that only revise
+    old periods are skipped. The first entry is the series as it stood when the window opened,
+    not a release, so it serves only as the starting point.
+    """
+    out: list[tuple[pd.Timestamp, pd.Timestamp, float]] = []
+    for (_, before), (day, values) in zip(vintages, vintages[1:], strict=False):
+        new = sorted(set(values) - set(before))
+        if not new or day.date() < start:
+            continue
+        period = new[-1]
+        earlier = [p for p in values if p < period]
+        if not earlier:
+            continue
+        prior = values[max(earlier)]
+        level = values[period]
+        if series.units == "chg":
+            change = level - prior
+        elif prior != 0:
+            change = 100.0 * (level / prior - 1.0)
+        else:
+            continue
+        out.append((day, period, change))
+    return out
+
+
+def fomc_meetings(target_upper: pd.Series) -> list[pd.Timestamp]:
+    """The scheduled decision days, plus the day before any change in the target that no
+    scheduled meeting explains (a move between meetings takes effect the next day too)."""
+    upper = target_upper.dropna().sort_index()
+    changed = upper.index[1:][upper.diff().iloc[1:].to_numpy() != 0]
+    moves = {pd.Timestamp(day) - pd.Timedelta(days=1) for day in changed}
+    return sorted({pd.Timestamp(d) for d in FOMC_MEETINGS} | moves)
 
 
 def fomc_rows(
