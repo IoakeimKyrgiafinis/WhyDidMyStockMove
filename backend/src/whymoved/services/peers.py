@@ -8,6 +8,7 @@ closes; nothing is precomputed or stored.
 from __future__ import annotations
 
 import math
+import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date
@@ -106,9 +107,16 @@ def build_window(explainer: MoveExplainer) -> UniverseWindow:
 class PeerService:
     def __init__(self, explainer: MoveExplainer) -> None:
         self._explainer = explainer
+        self._window: UniverseWindow | None = None
+        self._window_lock = threading.Lock()
 
     def window(self) -> UniverseWindow:
-        return self._explainer.cached(("peer_window",), lambda: build_window(self._explainer))
+        """The universe-wide residuals, built once per snapshot and kept. Not in the shared
+        cache: evicting it while peer results still pointed at it would hold two copies."""
+        with self._window_lock:
+            if self._window is None:
+                self._window = build_window(self._explainer)
+            return self._window
 
     def peers(self, ticker: str) -> PeerResult:
         t = self._explainer.member(ticker).ticker

@@ -155,3 +155,56 @@ def test_returns_skip_days_when_any_series_is_missing() -> None:
 
     assert close.index[300] not in explainer.prices("AAA").index
     assert isinstance(explainer.returns("AAA"), pd.DataFrame)
+
+
+# ---- the shared cache ----
+
+
+def test_cache_computes_a_key_once_while_many_requests_wait() -> None:
+    import threading
+    import time
+
+    from whymoved.services.explain import _LruCache
+
+    cache = _LruCache(4)
+    calls: list[int] = []
+    started = threading.Event()
+
+    def slow() -> str:
+        calls.append(1)
+        started.set()
+        time.sleep(0.2)
+        return "value"
+
+    results: list[str] = []
+    first = threading.Thread(target=lambda: results.append(cache.get_or_compute("k", slow)))
+    first.start()
+    started.wait()
+    others = [
+        threading.Thread(target=lambda: results.append(cache.get_or_compute("k", slow)))
+        for _ in range(8)
+    ]
+    for t in others:
+        t.start()
+    for t in [first, *others]:
+        t.join()
+    assert results == ["value"] * 9
+    assert len(calls) == 1
+
+
+def test_cache_retries_after_a_failure_and_evicts_the_oldest() -> None:
+    import pytest
+
+    from whymoved.services.explain import _LruCache
+
+    cache = _LruCache(2)
+
+    def boom() -> int:
+        raise RuntimeError("source down")
+
+    with pytest.raises(RuntimeError):
+        cache.get_or_compute("k", boom)
+    assert cache.get_or_compute("k", lambda: 1) == 1  # a failure is not cached or left pending
+    cache.get_or_compute("a", lambda: 2)
+    cache.get_or_compute("b", lambda: 3)
+    assert cache.get_or_compute("k", lambda: 99) == 99  # "k" was the oldest, so it was evicted

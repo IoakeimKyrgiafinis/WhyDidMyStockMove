@@ -72,22 +72,46 @@ class Profile:
 
 
 class _LruCache:
+    """Least-recently-used cache that computes each key once at a time.
+
+    When many visitors open the same stock at once, the first request computes and the others
+    wait for its result. Without that, each request computed its own copy in parallel, and a
+    burst of 30 on a fresh server ran a 512 MB host out of memory.
+    """
+
     def __init__(self, size: int) -> None:
         self._size = size
         self._data: OrderedDict[Hashable, object] = OrderedDict()
+        self._pending: dict[Hashable, threading.Event] = {}
         self._lock = threading.Lock()
 
     def get_or_compute[T](self, key: Hashable, compute: Callable[[], T]) -> T:
-        with self._lock:
-            if key in self._data:
-                self._data.move_to_end(key)
-                return self._data[key]  # type: ignore[return-value]
-        value = compute()
+        while True:
+            with self._lock:
+                if key in self._data:
+                    self._data.move_to_end(key)
+                    return self._data[key]  # type: ignore[return-value]
+                pending = self._pending.get(key)
+                if pending is None:
+                    done = self._pending[key] = threading.Event()
+                    break
+            # Another request is computing it: wait, then look again. If that request failed
+            # (or the value was already evicted), the loop computes it here.
+            pending.wait()
+        try:
+            value = compute()
+        except BaseException:
+            with self._lock:
+                del self._pending[key]
+            done.set()
+            raise
         with self._lock:
             self._data[key] = value
             self._data.move_to_end(key)
             while len(self._data) > self._size:
                 self._data.popitem(last=False)
+            del self._pending[key]
+        done.set()
         return value
 
 
